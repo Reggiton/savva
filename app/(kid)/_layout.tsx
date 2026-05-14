@@ -1,3 +1,4 @@
+import 'expo-dev-client'
 import { Tabs } from 'expo-router'
 
 export default function KidLayout() {
