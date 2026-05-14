@@ -1,9 +1,9 @@
 import { View, Text } from 'react-native'
 
-export default function Budget() {
+export default function Goals() {
   return (
     <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-      <Text>Budget</Text>
+      <Text>Goals</Text>
     </View>
   )
 }
