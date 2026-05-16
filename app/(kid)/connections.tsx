@@ -78,10 +78,20 @@ export default function Connections() {
     }
   }
 
-  async function toggleVisibility(connectionId: string, current: boolean) {
-    await supabase.from('parent_child_connections')
+  async function toggleVisibility(connectionId: string, current: boolean, parentId: string) {
+    await supabase
+      .from('parent_child_connections')
       .update({ visibility_enabled: !current })
       .eq('id', connectionId)
+
+    await supabase
+      .from('notifications')
+      .insert({
+        user_id: parentId,
+        type: 'visibility_toggled',
+        message: `Your child has turned visibility ${!current ? 'on' : 'off'}.`
+      })
+
     if (userId) fetchConnections(userId)
   }
 
@@ -159,7 +169,7 @@ export default function Connections() {
               <View style={styles.row}>
                 <TouchableOpacity
                   style={[styles.toggleBtn, item.visibility_enabled && styles.toggleActive]}
-                  onPress={() => toggleVisibility(item.id, item.visibility_enabled)}
+                  onPress={() => toggleVisibility(item.id, item.visibility_enabled, item.parent_id)}
                 >
                   <Text style={styles.toggleTxt}>
                     Visibility: {item.visibility_enabled ? 'On' : 'Off'}
