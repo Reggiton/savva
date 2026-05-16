@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react'
 import { View, Text, FlatList, StyleSheet, ActivityIndicator, TouchableOpacity } from 'react-native'
 import { supabase } from '../../lib/supabase'
+import { useFocusEffect } from 'expo-router'
+import { useCallback } from 'react'
+import { RefreshControl } from 'react-native'
 
 type Transaction = {
   id: string
@@ -17,23 +20,42 @@ export default function Transactions() {
   const [filtered, setFiltered] = useState<Transaction[]>([])
   const [selectedCategory, setSelectedCategory] = useState('All')
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
 
-  useEffect(() => {
-    supabase.auth.getUser().then(async ({ data: { user } }) => {
-      if (user) {
-        const { data } = await supabase
-          .from('transactions')
-          .select('id, merchant_name, category, amount, transaction_date')
-          .eq('user_id', user.id)
-          .order('transaction_date', { ascending: false })
-        if (data) {
-          setTransactions(data)
-          setFiltered(data)
+  useFocusEffect(
+    useCallback(() => {
+      supabase.auth.getUser().then(async ({ data: { user } }) => {
+        if (user) {
+          const { data } = await supabase
+            .from('transactions')
+            .select('id, merchant_name, category, amount, transaction_date')
+            .eq('user_id', user.id)
+            .order('transaction_date', { ascending: false })
+          if (data) {
+            setTransactions(data)
+            setFiltered(data)
+          }
+          setLoading(false)
         }
-        setLoading(false)
+      })
+    }, [])
+  )
+  async function onRefresh() {
+    setRefreshing(true)
+    const { data: { user } } = await supabase.auth.getUser()
+    if (user) {
+      const { data } = await supabase
+        .from('transactions')
+        .select('id, merchant_name, category, amount, transaction_date')
+        .eq('user_id', user.id)
+        .order('transaction_date', { ascending: false })
+      if (data) {
+        setTransactions(data)
+        setFiltered(data)
       }
-    })
-  }, [])
+    }
+    setRefreshing(false)
+  }
 
   function filterByCategory(category: string) {
     setSelectedCategory(category)
@@ -91,6 +113,7 @@ export default function Transactions() {
       <FlatList
         data={grouped}
         keyExtractor={item => item.date}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
         renderItem={({ item }) => (
           <View style={styles.dateGroup}>
             <Text style={styles.dateLabel}>{item.date}</Text>

@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react'
 import { View, Text, TextInput, FlatList, TouchableOpacity, StyleSheet, Alert, ScrollView, ActivityIndicator } from 'react-native'
 import { supabase } from '../../lib/supabase'
+import { useFocusEffect } from 'expo-router'
+import { useCallback } from 'react'
+import { RefreshControl } from 'react-native'
 
 type Kid = { id: string; full_name: string; username: string }
 type Connection = {
@@ -34,15 +37,29 @@ export default function ParentHome() {
   const [userId, setUserId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [kidLoading, setKidLoading] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
 
-  useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      if (user) {
-        setUserId(user.id)
-        fetchConnections(user.id)
-      }
-    })
-  }, [])
+  useFocusEffect(
+    useCallback(() => {
+      supabase.auth.getUser().then(async ({ data: { user } }) => {
+        if (user) {
+          setUserId(user.id)
+          await fetchConnections(user.id)
+          setLoading(false)
+        }
+      })
+    }, [])
+  )
+
+  async function onRefresh() {
+    setRefreshing(true)
+    const { data: { user } } = await supabase.auth.getUser()
+    if (user) {
+      await fetchConnections(user.id)
+      if (selectedKid) await fetchKidData(selectedKid)
+    }
+    setRefreshing(false)
+  }
 
   async function fetchConnections(uid: string) {
     const { data } = await supabase
@@ -182,6 +199,7 @@ export default function ParentHome() {
         <FlatList
           data={results}
           keyExtractor={item => item.id}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
           scrollEnabled={false}
           renderItem={({ item }) => (
             <View style={styles.card}>

@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react'
 import { View, Text, FlatList, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native'
 import { supabase } from '../../lib/supabase'
+import { useFocusEffect } from 'expo-router'
+import { useCallback } from 'react'
+import { RefreshControl } from 'react-native'
 
 type Notification = {
   id: string
@@ -23,15 +26,27 @@ const TYPE_ICONS: { [key: string]: string } = {
 export default function KidNotifications() {
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
 
-  useEffect(() => {
-    supabase.auth.getUser().then(async ({ data: { user } }) => {
-      if (user) {
-        await fetchNotifications(user.id)
-        setLoading(false)
-      }
-    })
-  }, [])
+  useFocusEffect(
+    useCallback(() => {
+      supabase.auth.getUser().then(async ({ data: { user } }) => {
+        if (user) {
+          await fetchNotifications(user.id)
+          setLoading(false)
+        }
+      })
+    }, [])
+  )
+
+  async function onRefresh() {
+    setRefreshing(true)
+    const { data: { user } } = await supabase.auth.getUser()
+    if (user) {
+      await fetchNotifications(user.id)
+    }
+    setRefreshing(false)
+  }
 
   async function fetchNotifications(uid: string) {
     const { data } = await supabase
@@ -86,6 +101,7 @@ export default function KidNotifications() {
       <FlatList
         data={notifications}
         keyExtractor={item => item.id}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
         renderItem={({ item }) => (
           <TouchableOpacity
             style={[styles.card, !item.read && styles.unread]}

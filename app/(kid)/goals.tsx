@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react'
 import { View, Text, FlatList, StyleSheet, TouchableOpacity, TextInput, Alert, ActivityIndicator, Modal } from 'react-native'
 import { supabase } from '../../lib/supabase'
+import { useFocusEffect } from 'expo-router'
+import { useCallback } from 'react'
+import { RefreshControl } from 'react-native'
 
 type Goal = {
   id: string
@@ -36,17 +39,30 @@ export default function Goals() {
   const [selectedCategory, setSelectedCategory] = useState('')
   const [limitInput, setLimitInput] = useState('')
   const [userId, setUserId] = useState<string | null>(null)
+  const [refreshing, setRefreshing] = useState(false)
 
-  useEffect(() => {
-    supabase.auth.getUser().then(async ({ data: { user } }) => {
-      if (user) {
-        setUserId(user.id)
-        await fetchGoals(user.id)
-        await fetchSpending(user.id)
-        setLoading(false)
-      }
-    })
-  }, [])
+  useFocusEffect(
+    useCallback(() => {
+      supabase.auth.getUser().then(async ({ data: { user } }) => {
+        if (user) {
+          setUserId(user.id)
+          await fetchGoals(user.id)
+          await fetchSpending(user.id)
+          setLoading(false)
+        }
+      })
+    }, [])
+  )
+
+  async function onRefresh() {
+    setRefreshing(true)
+    const { data: { user } } = await supabase.auth.getUser()
+    if (user) {
+      await fetchGoals(user.id)
+      await fetchSpending(user.id)
+    }
+    setRefreshing(false)
+  }
 
   async function fetchGoals(uid: string) {
     const { data } = await supabase
@@ -137,6 +153,7 @@ export default function Goals() {
       <FlatList
         data={CATEGORIES}
         keyExtractor={item => item}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
         renderItem={({ item }) => {
           const goal = goals.find(g => g.category === item)
           const spent = spending[item] || 0
