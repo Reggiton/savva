@@ -11,6 +11,7 @@ type Notification = {
 }
 
 const TYPE_ICONS: { [key: string]: string } = {
+  connection_request: '👋',
   request_accepted: '✅',
   request_declined: '❌',
   access_revoked: '🚫',
@@ -19,7 +20,7 @@ const TYPE_ICONS: { [key: string]: string } = {
   account_deleted: '🗑',
 }
 
-export default function ParentNotifications() {
+export default function KidNotifications() {
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [loading, setLoading] = useState(true)
 

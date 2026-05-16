@@ -9,6 +9,7 @@ export default function KidLayout() {
       <Tabs.Screen name="goals" options={{ title: 'Goals' }} />
       <Tabs.Screen name="insights" options={{ title: 'Insights' }} />
       <Tabs.Screen name="connections" options={{ title: 'Connections' }} />
+      <Tabs.Screen name="notifications" options={{ title: 'Notifications' }} />
     </Tabs>
   )
 }
