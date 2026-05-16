@@ -55,20 +55,24 @@ export default function Connections() {
 
   async function handleRequest(requestId: string, parentId: string, accept: boolean) {
     if (accept) {
-      await supabase.from('connection_requests')
+      const { error: updateError } = await supabase.from('connection_requests')
         .update({ status: 'accepted' })
         .eq('id', requestId)
+      console.log('update request error:', updateError)
 
-      await supabase.from('parent_child_connections')
-        .insert({ parent_id: parentId, child_id: userId, status: 'active', visibility_enabled: true })
+      const { error: insertError } = await supabase.from('parent_child_connections')
+        .upsert(
+          { parent_id: parentId, child_id: userId, status: 'active', visibility_enabled: true },
+          { onConflict: 'parent_id,child_id' }
+        )
 
-      await supabase.from('notifications')
+      const { error: notifError } = await supabase.from('notifications')
         .insert({ user_id: parentId, type: 'request_accepted', message: 'Your connection request was accepted.' })
+      console.log('notification error:', notifError)
     } else {
       await supabase.from('connection_requests')
         .update({ status: 'declined' })
         .eq('id', requestId)
-
       await supabase.from('notifications')
         .insert({ user_id: parentId, type: 'request_declined', message: 'Your connection request was declined.' })
     }

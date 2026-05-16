@@ -123,7 +123,9 @@ export default function Transactions() {
                   <Text style={styles.txMerchant}>{tx.merchant_name}</Text>
                   <Text style={styles.txCategory}>{tx.category}</Text>
                 </View>
-                <Text style={styles.txAmount}>${tx.amount.toFixed(2)}</Text>
+                <Text style={[styles.txAmount, Number(tx.amount) < 0 && styles.positive]}>
+                  {Number(tx.amount) < 0 ? '+' : '-'}${Math.abs(Number(tx.amount)).toFixed(2)}
+                </Text>
               </View>
             ))}
           </View>
@@ -150,5 +152,6 @@ const styles = StyleSheet.create({
   txMerchant: { fontSize: 15, fontWeight: '500' },
   txCategory: { fontSize: 13, color: '#999', marginTop: 2 },
   txAmount: { fontSize: 15, fontWeight: '600' },
+  positive: { color: 'green' },
   empty: { color: '#999', fontSize: 14, textAlign: 'center', marginTop: 24 },
 })

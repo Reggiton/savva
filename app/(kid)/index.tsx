@@ -142,7 +142,9 @@ export default function KidDashboard() {
                   <Text style={styles.txMerchant}>{item.merchant_name}</Text>
                   <Text style={styles.txCategory}>{item.category}</Text>
                 </View>
-                <Text style={styles.txAmount}>${item.amount.toFixed(2)}</Text>
+                <Text style={[styles.txAmount, Number(item.amount) < 0 && styles.positive]}>
+                  {Number(item.amount) < 0 ? '+' : '-'}${Math.abs(Number(item.amount)).toFixed(2)}
+                </Text>
               </View>
             )}
             ListEmptyComponent={<Text style={styles.empty}>No transactions yet.</Text>}
@@ -177,5 +179,6 @@ const styles = StyleSheet.create({
   txAmount: { fontSize: 15, fontWeight: '600' },
   empty: { color: '#999', fontSize: 14, textAlign: 'center', marginTop: 24 },
   signOutBtn: { alignSelf: 'flex-end', padding: 8, marginTop: 16 },
+  positive: { color: 'green' },
   signOutTxt: { color: '#ff3b30', fontWeight: '600' },
 })
