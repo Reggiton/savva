@@ -1,14 +1,14 @@
-import { useEffect, useState } from 'react'
-import { View, Text, TouchableOpacity, StyleSheet, Alert, ActivityIndicator, SafeAreaView } from 'react-native'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { View, Text, TouchableOpacity, StyleSheet, Alert, ActivityIndicator, SafeAreaView, Animated } from 'react-native'
 import { create, open, LinkSuccess, LinkExit, LinkTokenConfiguration } from 'react-native-plaid-link-sdk'
-import { useRouter } from 'expo-router'
+import { useFocusEffect, useRouter } from 'expo-router'
 import { supabase } from '../../lib/supabase'
 import { createLinkToken } from '../../lib/plaid'
 import RefreshableScrollView from '../../components/RefreshableScrollView'
 import Header from '../../components/Header'
-import StatCard from '../../components/StatCard'
 import SpendingPieChart, { SpendingSlice } from '../../components/SpendingPieChart'
 import { Colors, Typography, Spacing, BorderRadius, Shadows } from '../../lib/theme'
+import { getMoneyInTotal, getMonthStartDateString, isEverydaySpending } from '../../lib/spending'
 
 type Transaction = {
   id: string
@@ -20,6 +20,7 @@ type Transaction = {
 
 export default function KidDashboard() {
   const router = useRouter()
+  const insightTransition = useRef(new Animated.Value(0)).current
   const [userId, setUserId] = useState<string | null>(null)
   const [userName, setUserName] = useState('User')
   const [profilePicUrl, setProfilePicUrl] = useState('')
@@ -28,6 +29,7 @@ export default function KidDashboard() {
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [loading, setLoading] = useState(true)
   const [syncing, setSyncing] = useState(false)
+  const [unreadNotificationCount, setUnreadNotificationCount] = useState(0)
 
   useEffect(() => {
     async function loadDashboard() {
@@ -50,6 +52,7 @@ export default function KidDashboard() {
         setUserName(profile.full_name || profile.username)
       }
       setProfilePicUrl((user.user_metadata?.profile_pic_url as string) || '')
+      await fetchUnreadNotificationCount(user.id)
 
       const connected = await checkAccount(user.id)
 
@@ -70,6 +73,27 @@ export default function KidDashboard() {
     loadDashboard()
   }, [])
 
+  useFocusEffect(
+    useCallback(() => {
+      async function loadUnreadCount() {
+        const { data: { user } } = await supabase.auth.getUser()
+        if (user) await fetchUnreadNotificationCount(user.id)
+      }
+
+      loadUnreadCount()
+    }, [])
+  )
+
+  async function fetchUnreadNotificationCount(uid: string) {
+    const { count } = await supabase
+      .from('notifications')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', uid)
+      .eq('read', false)
+
+    setUnreadNotificationCount(count ?? 0)
+  }
+
   async function checkAccount(uid: string): Promise<boolean> {
     const { data } = await supabase
       .from('plaid_accounts')
@@ -86,6 +110,7 @@ export default function KidDashboard() {
     if (user) {
       await syncTransactions(user.id)
       await fetchTransactions(user.id)
+      await fetchUnreadNotificationCount(user.id)
     }
   }
 
@@ -106,8 +131,8 @@ export default function KidDashboard() {
       .from('transactions')
       .select('id, merchant_name, category, amount, transaction_date')
       .eq('user_id', uid)
+      .gte('transaction_date', getMonthStartDateString())
       .order('transaction_date', { ascending: false })
-      .limit(20)
     if (data) setTransactions(data)
   }
 
@@ -144,18 +169,16 @@ export default function KidDashboard() {
     })
   }
 
-  const totalSpent = transactions.reduce((sum, t) => sum + t.amount, 0)
-  const excludedSpendingCategories = ['TRANSFER_OUT', 'TRANSFER_IN', 'LOAN_PAYMENTS', 'BANK_FEES']
-  const transferOutTotal = transactions
-    .filter((transaction) => transaction.category === 'TRANSFER_OUT')
-    .reduce((sum, transaction) => sum + Math.abs(Number(transaction.amount)), 0)
-  const expenseTransactions = transactions.filter((transaction) => {
-    const amount = Number(transaction.amount)
-    const category = transaction.category || ''
+  function openInsights() {
+    insightTransition.setValue(0)
+    Animated.timing(insightTransition, {
+      toValue: 1,
+      duration: 180,
+      useNativeDriver: true,
+    }).start(() => router.push('/(kid)/insights' as any))
+  }
 
-    return amount > 0 && !excludedSpendingCategories.includes(category)
-  })
-  const spendingTotal = expenseTransactions.reduce((sum, transaction) => sum + Number(transaction.amount), 0)
+  const expenseTransactions = transactions.filter(isEverydaySpending)
   const spendingColors = ['#6F55F2', '#2D185F', '#9B7BFF', '#4A2DB4', '#C3B0FF', '#1D123E', '#7D3FE8']
   const spendingSlices: SpendingSlice[] = Object.values(
     expenseTransactions.reduce<Record<string, SpendingSlice>>((acc, transaction) => {
@@ -172,6 +195,25 @@ export default function KidDashboard() {
       return acc
     }, {})
   ).sort((a, b) => b.amount - a.amount)
+  const topSpendingSlice = spendingSlices[0]
+  const moneyInTotal = getMoneyInTotal(transactions)
+  const broadInsight = topSpendingSlice
+    ? `${formatCategory(topSpendingSlice.category)} is your biggest spending area this month. Check your insights for a broader pattern.`
+    : 'Connect an account and spend a little more to unlock a broad monthly insight.'
+  const backLayerTransform = {
+    transform: [
+      { translateX: insightTransition.interpolate({ inputRange: [0, 1], outputRange: [0, -22] }) },
+      { translateY: insightTransition.interpolate({ inputRange: [0, 1], outputRange: [0, -28] }) },
+      { rotate: insightTransition.interpolate({ inputRange: [0, 1], outputRange: ['6deg', '0deg'] }) },
+    ],
+  }
+  const midLayerTransform = {
+    transform: [
+      { translateX: insightTransition.interpolate({ inputRange: [0, 1], outputRange: [0, -16] }) },
+      { translateY: insightTransition.interpolate({ inputRange: [0, 1], outputRange: [0, -20] }) },
+      { rotate: insightTransition.interpolate({ inputRange: [0, 1], outputRange: ['3deg', '0deg'] }) },
+    ],
+  }
 
   if (loading) {
     return (
@@ -187,6 +229,8 @@ export default function KidDashboard() {
         userName={userName}
         profilePicUrl={profilePicUrl}
         onProfilePress={() => router.push('/(kid)/settings' as any)}
+        onNotificationsPress={() => router.push('/(kid)/notifications' as any)}
+        unreadNotificationCount={unreadNotificationCount}
       />
 
       <RefreshableScrollView onRefresh={handleRefresh} contentContainerStyle={styles.scrollContent}>
@@ -202,31 +246,29 @@ export default function KidDashboard() {
               <SpendingPieChart slices={spendingSlices} size={212} />
             </View>
 
-            <View style={styles.statsRow}>
-              <StatCard
-                label="Spent"
-                value={`$${Math.abs(spendingTotal).toLocaleString(undefined, {
+            <TouchableOpacity
+              style={styles.insightStack}
+              onPress={openInsights}
+              activeOpacity={0.85}
+            >
+              <Animated.View style={[styles.insightLayer, styles.insightLayerBack, backLayerTransform]} />
+              <Animated.View style={[styles.insightLayer, styles.insightLayerMid, midLayerTransform]} />
+              <View style={styles.insightCard}>
+                <Text style={styles.insightText}>{broadInsight}</Text>
+              </View>
+            </TouchableOpacity>
+
+            <View style={styles.moneyInCard}>
+              <View>
+                <Text style={styles.moneyInLabel}>MONEY IN</Text>
+                <Text style={styles.moneyInSubtitle}>This month</Text>
+              </View>
+              <Text style={styles.moneyInAmount}>
+                +${moneyInTotal.toLocaleString(undefined, {
                   minimumFractionDigits: 2,
                   maximumFractionDigits: 2,
-                })}`}
-                subtitle="this month"
-              />
-              <View style={styles.statGap} />
-              <StatCard
-                label="Transfers Out"
-                value={`$${transferOutTotal.toLocaleString(undefined, {
-                  minimumFractionDigits: 2,
-                  maximumFractionDigits: 2,
-                })}`}
-                subtitle="moved out"
-                variant="primary"
-                onInfoPress={() =>
-                  Alert.alert(
-                    'Transfers Out',
-                    'Transfers Out is money that moved out of your account, such as moving money to another account, paying a credit card, or sending money externally. Savva keeps it separate from everyday spending so your chart focuses on purchases like food, transportation, shopping, and entertainment.'
-                  )
-                }
-              />
+                })}
+              </Text>
             </View>
 
             <View style={styles.row}>
@@ -271,13 +313,79 @@ export default function KidDashboard() {
   )
 }
 
+function formatCategory(category: string) {
+  return category
+    .replace(/_/g, ' ')
+    .toLowerCase()
+    .replace(/\b\w/g, (letter) => letter.toUpperCase())
+}
+
+const insightBorderColor = Colors.primary
+
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: Colors.background },
   scrollContent: { paddingHorizontal: Spacing.lg, paddingBottom: Spacing.xl },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: Colors.background },
   progressContainer: { alignItems: 'center' },
-  statsRow: { flexDirection: 'row', marginBottom: Spacing.xl },
-  statGap: { width: Spacing.sm },
+  insightStack: {
+    minHeight: 154,
+    marginBottom: Spacing.xl,
+    justifyContent: 'flex-start',
+  },
+  insightLayer: {
+    position: 'absolute',
+    left: 10,
+    right: 0,
+    top: 12,
+    height: 118,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 2,
+    borderColor: insightBorderColor,
+    backgroundColor: Colors.cardBackground,
+  },
+  insightLayerBack: {
+    transform: [{ rotate: '6deg' }],
+    top: 28,
+    left: 22,
+  },
+  insightLayerMid: {
+    transform: [{ rotate: '3deg' }],
+    top: 20,
+    left: 16,
+  },
+  insightCard: {
+    minHeight: 118,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 2,
+    borderColor: insightBorderColor,
+    backgroundColor: Colors.cardBackgroundAlt,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: Spacing.lg,
+    ...Shadows.medium,
+  },
+  insightText: {
+    color: Colors.textPrimary,
+    fontSize: Typography.bodySmall,
+    fontWeight: '700',
+    lineHeight: 20,
+    textAlign: 'center',
+  },
+  moneyInCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: Colors.cardBackground,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    padding: Spacing.lg,
+    marginBottom: Spacing.xl,
+    ...Shadows.medium,
+  },
+  moneyInLabel: { color: Colors.success, fontSize: Typography.caption, fontWeight: '900', letterSpacing: 1 },
+  moneyInSubtitle: { color: Colors.textSecondary, fontSize: Typography.bodySmall, marginTop: 4 },
+  moneyInAmount: { color: Colors.success, fontSize: Typography.h4, fontWeight: '900' },
   connectBtn: {
     backgroundColor: Colors.primary,
     borderRadius: BorderRadius.md,

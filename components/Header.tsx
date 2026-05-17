@@ -1,5 +1,6 @@
 import React from 'react'
 import { Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
+import { Ionicons } from '@expo/vector-icons'
 import { BorderRadius, Colors, Spacing, Typography } from '../lib/theme'
 
 interface HeaderProps {
@@ -8,6 +9,8 @@ interface HeaderProps {
   userInitials?: string
   profilePicUrl?: string
   onProfilePress?: () => void
+  onNotificationsPress?: () => void
+  unreadNotificationCount?: number
 }
 
 export default function Header({
@@ -16,6 +19,8 @@ export default function Header({
   userInitials,
   profilePicUrl,
   onProfilePress,
+  onNotificationsPress,
+  unreadNotificationCount = 0,
 }: HeaderProps) {
   const initials =
     userInitials ||
@@ -33,17 +38,34 @@ export default function Header({
         <Text style={styles.userName}>{userName}</Text>
       </View>
 
-      <TouchableOpacity
-        style={styles.profileBadge}
-        onPress={onProfilePress}
-        activeOpacity={0.7}
-      >
-        {profilePicUrl ? (
-          <Image source={{ uri: profilePicUrl }} style={styles.profileImage} />
-        ) : (
-          <Text style={styles.initials}>{initials}</Text>
-        )}
-      </TouchableOpacity>
+      <View style={styles.actionRow}>
+        <TouchableOpacity
+          style={styles.notificationButton}
+          onPress={onNotificationsPress}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="notifications-outline" size={24} color={Colors.textPrimary} />
+          {unreadNotificationCount > 0 && (
+            <View style={styles.notificationBadge}>
+              <Text style={styles.notificationBadgeText}>
+                {unreadNotificationCount > 99 ? '99+' : unreadNotificationCount}
+              </Text>
+            </View>
+          )}
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.profileBadge}
+          onPress={onProfilePress}
+          activeOpacity={0.7}
+        >
+          {profilePicUrl ? (
+            <Image source={{ uri: profilePicUrl }} style={styles.profileImage} />
+          ) : (
+            <Text style={styles.initials}>{initials}</Text>
+          )}
+        </TouchableOpacity>
+      </View>
     </View>
   )
 }
@@ -70,6 +92,40 @@ const styles = StyleSheet.create({
     fontSize: Typography.h3,
     fontWeight: '700',
     color: Colors.textPrimary,
+  },
+  actionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+  },
+  notificationButton: {
+    width: 44,
+    height: 44,
+    borderRadius: BorderRadius.full,
+    backgroundColor: Colors.cardBackground,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  notificationBadge: {
+    position: 'absolute',
+    top: -3,
+    right: -3,
+    minWidth: 20,
+    height: 20,
+    borderRadius: 10,
+    paddingHorizontal: 5,
+    backgroundColor: '#FF2DAA',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: Colors.background,
+  },
+  notificationBadgeText: {
+    color: Colors.textPrimary,
+    fontSize: Typography.tiny,
+    fontWeight: '900',
   },
   profileBadge: {
     width: 48,

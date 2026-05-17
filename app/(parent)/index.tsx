@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
-import { View, Text, TextInput, FlatList, TouchableOpacity, StyleSheet, Alert, ScrollView, ActivityIndicator } from 'react-native'
+import { View, Text, TextInput, FlatList, TouchableOpacity, StyleSheet, Alert, ScrollView, ActivityIndicator, SafeAreaView } from 'react-native'
 import { supabase } from '../../lib/supabase'
-import { useFocusEffect } from 'expo-router'
+import { useFocusEffect, useRouter } from 'expo-router'
 import { useCallback } from 'react'
 import { RefreshControl } from 'react-native'
 
@@ -27,6 +27,7 @@ type Goal = {
 type SpendingByCategory = { [key: string]: number }
 
 export default function ParentHome() {
+  const router = useRouter()
   const [search, setSearch] = useState('')
   const [results, setResults] = useState<Kid[]>([])
   const [connections, setConnections] = useState<Connection[]>([])
@@ -38,6 +39,7 @@ export default function ParentHome() {
   const [loading, setLoading] = useState(true)
   const [kidLoading, setKidLoading] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
+  const [signingOut, setSigningOut] = useState(false)
 
   useFocusEffect(
     useCallback(() => {
@@ -173,6 +175,22 @@ export default function ParentHome() {
     }
   }
 
+  async function handleSignOut() {
+    setSigningOut(true)
+
+    const { error } = await supabase.auth.signOut({ scope: 'local' })
+
+    setSigningOut(false)
+
+    if (error) {
+      Alert.alert('Could not sign out', error.message)
+      return
+    }
+
+    router.dismissAll()
+    router.replace('/login' as any)
+  }
+
   const totalSpent = Object.values(spending).reduce((sum, val) => sum + val, 0)
 
   if (loading) {
@@ -184,13 +202,21 @@ export default function ParentHome() {
   }
 
   return (
-    <ScrollView style={styles.container}>
-      <View style={styles.headerRow}>
-        <Text style={styles.title}>Parent Dashboard</Text>
-        <TouchableOpacity onPress={() => supabase.auth.signOut()}>
-          <Text style={styles.signOutTxt}>Sign out</Text>
-        </TouchableOpacity>
-      </View>
+    <SafeAreaView style={styles.screen}>
+      <ScrollView contentContainerStyle={styles.container}>
+        <View style={styles.headerRow}>
+          <Text style={styles.title}>Parent Dashboard</Text>
+          <TouchableOpacity
+            style={styles.signOutBtn}
+            onPress={handleSignOut}
+            disabled={signingOut}
+            hitSlop={{ top: 12, right: 12, bottom: 12, left: 12 }}
+          >
+            <Text style={[styles.signOutTxt, signingOut && styles.signOutTxtDisabled]}>
+              {signingOut ? 'Signing out...' : 'Sign out'}
+            </Text>
+          </TouchableOpacity>
+        </View>
 
       {/* Search for kids */}
       <View style={styles.searchRow}>
@@ -303,16 +329,20 @@ export default function ParentHome() {
           ))}
         </>
       ) : null}
-    </ScrollView>
+      </ScrollView>
+    </SafeAreaView>
   )
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 16 },
+  screen: { flex: 1 },
+  container: { padding: 16, paddingBottom: 32 },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
   title: { fontSize: 24, fontWeight: '600' },
+  signOutBtn: { paddingVertical: 8, paddingLeft: 12 },
   signOutTxt: { color: '#ff3b30', fontWeight: '600' },
+  signOutTxtDisabled: { opacity: 0.6 },
   searchRow: { flexDirection: 'row', gap: 8, marginBottom: 16 },
   input: { flex: 1, borderWidth: 1, borderColor: '#ccc', borderRadius: 8, padding: 12 },
   searchBtn: { backgroundColor: '#000', borderRadius: 8, padding: 12, justifyContent: 'center' },

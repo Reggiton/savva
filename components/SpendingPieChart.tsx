@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react'
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native'
+import { StyleSheet, Text, View } from 'react-native'
 import Svg, { Circle, Path } from 'react-native-svg'
 import { BorderRadius, Colors, Spacing, Typography } from '../lib/theme'
 
@@ -12,6 +12,7 @@ export type SpendingSlice = {
 interface SpendingPieChartProps {
   slices: SpendingSlice[]
   size?: number
+  totalLabel?: string
 }
 
 function polarToCartesian(center: number, radius: number, angle: number) {
@@ -41,8 +42,8 @@ function formatCategory(category: string) {
     .replace(/\b\w/g, (letter) => letter.toUpperCase())
 }
 
-export default function SpendingPieChart({ slices, size = 220 }: SpendingPieChartProps) {
-  const [selectedIndex, setSelectedIndex] = useState(0)
+export default function SpendingPieChart({ slices, size = 220, totalLabel = 'Monthly spending' }: SpendingPieChartProps) {
+  const [selectedIndex, setSelectedIndex] = useState<number | null>(null)
   const radius = size / 2 - 18
   const center = size / 2
   const total = slices.reduce((sum, slice) => sum + Math.abs(slice.amount), 0)
@@ -65,7 +66,7 @@ export default function SpendingPieChart({ slices, size = 220 }: SpendingPieChar
     })
   }, [center, radius, slices, total])
 
-  const selected = arcs[selectedIndex] || arcs[0]
+  const selected = selectedIndex === null ? null : arcs[selectedIndex]
 
   if (total <= 0 || arcs.length === 0) {
     return (
@@ -89,54 +90,33 @@ export default function SpendingPieChart({ slices, size = 220 }: SpendingPieChar
             fill="transparent"
           />
 
-          {arcs.map((arc) => (
+          {arcs.map((arc) => {
+            const isSelected = arc.index === selectedIndex
+            const isDimmed = selectedIndex !== null && !isSelected
+
+            return (
             <Path
               key={arc.category}
               d={arc.path}
               stroke={arc.color}
-              strokeWidth={30}
+              strokeWidth={isSelected ? 36 : 30}
               strokeLinecap="butt"
-              opacity={arc.index === selectedIndex ? 1 : 0.82}
+              opacity={isDimmed ? 0.22 : 1}
               fill="transparent"
-              onPress={() => setSelectedIndex(arc.index)}
+              onPress={() => setSelectedIndex(isSelected ? null : arc.index)}
             />
-          ))}
+            )
+          })}
         </Svg>
 
-        <View style={styles.centerLabel}>
+        <View style={[styles.centerLabel, selected && styles.centerLabelSelected]}>
           <Text style={styles.centerAmount}>
-            ${Math.abs(selected.amount).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+            ${Math.abs(selected?.amount ?? total).toLocaleString(undefined, { maximumFractionDigits: 0 })}
           </Text>
           <Text style={styles.centerCaption}>
-            {Math.round(selected.percentage * 100)}%
+            {selected ? formatCategory(selected.category) : totalLabel}
           </Text>
         </View>
-      </View>
-
-      <View style={styles.infoCard}>
-        <View style={styles.infoHeader}>
-          <View style={[styles.colorDot, { backgroundColor: selected.color }]} />
-          <Text style={styles.infoTitle}>{formatCategory(selected.category)}</Text>
-        </View>
-        <Text style={styles.infoText}>
-          ${Math.abs(selected.amount).toFixed(2)} of your recent spending
-        </Text>
-      </View>
-
-      <View style={styles.legend}>
-        {arcs.slice(0, 5).map((arc) => (
-          <TouchableOpacity
-            key={arc.category}
-            style={[styles.legendItem, arc.index === selectedIndex && styles.legendItemActive]}
-            onPress={() => setSelectedIndex(arc.index)}
-            activeOpacity={0.8}
-          >
-            <View style={[styles.legendDot, { backgroundColor: arc.color }]} />
-            <Text style={styles.legendText} numberOfLines={1}>
-              {formatCategory(arc.category)}
-            </Text>
-          </TouchableOpacity>
-        ))}
       </View>
     </View>
   )
@@ -154,6 +134,13 @@ const styles = StyleSheet.create({
   centerLabel: {
     position: 'absolute',
     alignItems: 'center',
+    maxWidth: '58%',
+  },
+  centerLabelSelected: {
+    shadowColor: Colors.primaryLight,
+    shadowOpacity: 0.75,
+    shadowRadius: 12,
+    elevation: 8,
   },
   centerAmount: {
     fontSize: 30,
@@ -165,70 +152,7 @@ const styles = StyleSheet.create({
     fontSize: Typography.caption,
     color: Colors.textSecondary,
     fontWeight: '700',
-    letterSpacing: 1,
-  },
-  infoCard: {
-    width: '100%',
-    marginTop: Spacing.md,
-    padding: Spacing.md,
-    borderRadius: BorderRadius.lg,
-    backgroundColor: Colors.cardBackground,
-    borderWidth: 1,
-    borderColor: Colors.border,
-  },
-  infoHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: Spacing.xs,
-  },
-  colorDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    marginRight: Spacing.sm,
-  },
-  infoTitle: {
-    color: Colors.textPrimary,
-    fontSize: Typography.body,
-    fontWeight: '800',
-  },
-  infoText: {
-    color: Colors.textSecondary,
-    fontSize: Typography.bodySmall,
-  },
-  legend: {
-    width: '100%',
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: Spacing.sm,
-    marginTop: Spacing.md,
-  },
-  legendItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    maxWidth: '48%',
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: Spacing.xs,
-    borderRadius: BorderRadius.full,
-    backgroundColor: Colors.cardBackground,
-    borderWidth: 1,
-    borderColor: Colors.border,
-  },
-  legendItemActive: {
-    borderColor: Colors.primary,
-    backgroundColor: Colors.cardBackgroundAlt,
-  },
-  legendDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    marginRight: Spacing.xs,
-  },
-  legendText: {
-    color: Colors.textSecondary,
-    fontSize: Typography.caption,
-    fontWeight: '700',
-    flexShrink: 1,
+    textAlign: 'center',
   },
   emptyChart: {
     width: '100%',

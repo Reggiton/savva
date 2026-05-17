@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
-import { View, Text, FlatList, StyleSheet, ActivityIndicator, TouchableOpacity, SafeAreaView, RefreshControl } from 'react-native'
+import { View, Text, FlatList, StyleSheet, ActivityIndicator, TouchableOpacity, SafeAreaView, RefreshControl, Alert } from 'react-native'
 import { supabase } from '../../lib/supabase'
 import { useFocusEffect } from 'expo-router'
 import { useCallback } from 'react'
-import { BorderRadius, Colors, Spacing, Typography } from '../../lib/theme'
+import { BorderRadius, Colors, Shadows, Spacing, Typography } from '../../lib/theme'
+import { getEverydaySpendingTotal, getTransferOutTotal, isCurrentMonthTransaction } from '../../lib/spending'
 
 type Transaction = {
   id: string
@@ -108,12 +109,47 @@ export default function Transactions() {
   }
 
   const grouped = groupByDate(filtered)
+  const currentMonthTransactions = transactions.filter(isCurrentMonthTransaction)
+  const monthlySpendingTotal = getEverydaySpendingTotal(currentMonthTransactions)
+  const transferOutTotal = getTransferOutTotal(currentMonthTransactions)
 
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.eyebrow}>SPENDING HISTORY</Text>
         <Text style={styles.title}>Transactions</Text>
+      </View>
+
+      <View style={styles.summaryRow}>
+        <View style={styles.summaryCard}>
+          <Text style={styles.summaryLabel}>MONTHLY SPENDING</Text>
+          <Text style={styles.summaryAmount}>
+            ${monthlySpendingTotal.toLocaleString(undefined, {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 2,
+            })}
+          </Text>
+        </View>
+
+        <TouchableOpacity
+          style={styles.summaryCard}
+          activeOpacity={0.85}
+          onPress={() =>
+            Alert.alert(
+              'Transfers Out',
+              'Transfers Out is money that moved out of your account, such as moving money to another account, paying a credit card, or sending money externally.'
+            )
+          }
+        >
+          <Text style={styles.summaryLabel}>TRANSFERS OUT</Text>
+          <Text style={styles.summarySubtitle}>Moved this month</Text>
+          <Text style={styles.summaryAmount}>
+            ${transferOutTotal.toLocaleString(undefined, {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 2,
+            })}
+          </Text>
+        </TouchableOpacity>
       </View>
 
       <FlatList
@@ -180,6 +216,26 @@ const styles = StyleSheet.create({
   header: { paddingHorizontal: Spacing.lg, paddingTop: Spacing.xl, paddingBottom: Spacing.md },
   eyebrow: { fontSize: Typography.caption, color: Colors.textSecondary, fontWeight: '800', letterSpacing: 1.2 },
   title: { fontSize: Typography.h2, fontWeight: '800', color: Colors.textPrimary, marginTop: Spacing.xs },
+  summaryRow: {
+    flexDirection: 'row',
+    gap: Spacing.sm,
+    marginHorizontal: Spacing.lg,
+    marginBottom: Spacing.md,
+  },
+  summaryCard: {
+    flex: 1,
+    minHeight: 112,
+    padding: Spacing.md,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    backgroundColor: Colors.cardBackground,
+    justifyContent: 'space-between',
+    ...Shadows.medium,
+  },
+  summaryLabel: { color: Colors.primary, fontSize: Typography.caption, fontWeight: '900', letterSpacing: 1 },
+  summarySubtitle: { color: Colors.textSecondary, fontSize: Typography.caption, marginTop: 4 },
+  summaryAmount: { color: Colors.textPrimary, fontSize: Typography.body, fontWeight: '900', marginTop: Spacing.md },
   filterRow: { height: 48, marginBottom: 16, flexGrow: 0 },
   filterContent: { paddingHorizontal: Spacing.lg, alignItems: 'center', paddingBottom: Spacing.xs },
   filterBtn: {

@@ -40,8 +40,7 @@ export default function KidLayout() {
       <Tabs.Screen
         name="insights"
         options={{
-          title: 'Insights',
-          tabBarIcon: ({ color, size }) => <Ionicons name="analytics-outline" color={color} size={size} />,
+          href: null,
         }}
       />
       <Tabs.Screen
@@ -54,15 +53,13 @@ export default function KidLayout() {
       <Tabs.Screen
         name="notifications"
         options={{
-          title: 'Notifications',
-          tabBarIcon: ({ color, size }) => <Ionicons name="notifications-outline" color={color} size={size} />,
+          href: null,
         }}
       />
       <Tabs.Screen
         name="settings"
         options={{
-          title: 'Profile',
-          tabBarIcon: ({ color, size }) => <Ionicons name="person-outline" color={color} size={size} />,
+          href: null,
         }}
       />
     </Tabs>
