@@ -33,9 +33,15 @@ export default function Header({
 
   return (
     <View style={styles.container}>
-      <View style={styles.textContainer}>
-        <Text style={styles.greeting}>{greeting},</Text>
-        <Text style={styles.userName}>{userName}</Text>
+      <View style={styles.leftContent}>
+        <View style={styles.logoBadge}>
+          <Image source={require('../assets/savva-logo.png')} style={styles.logo} resizeMode="contain" />
+        </View>
+        <View style={styles.textContainer}>
+          <Text style={styles.brand}>SAVVA</Text>
+          <Text style={styles.greeting}>{greeting},</Text>
+          <Text style={styles.userName}>{userName}</Text>
+        </View>
       </View>
 
       <View style={styles.actionRow}>
@@ -80,8 +86,37 @@ const styles = StyleSheet.create({
     paddingBottom: Spacing.md,
     backgroundColor: Colors.background,
   },
+  leftContent: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    minWidth: 0,
+  },
+  logoBadge: {
+    width: 44,
+    height: 44,
+    borderRadius: BorderRadius.md,
+    backgroundColor: Colors.cardBackground,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: Spacing.sm,
+  },
+  logo: {
+    width: 32,
+    height: 32,
+  },
   textContainer: {
     flex: 1,
+    minWidth: 0,
+  },
+  brand: {
+    color: Colors.primaryLight,
+    fontSize: Typography.tiny,
+    fontWeight: '900',
+    letterSpacing: 1.2,
+    marginBottom: 1,
   },
   greeting: {
     fontSize: Typography.bodySmall,
@@ -92,6 +127,7 @@ const styles = StyleSheet.create({
     fontSize: Typography.h3,
     fontWeight: '700',
     color: Colors.textPrimary,
+    flexShrink: 1,
   },
   actionRow: {
     flexDirection: 'row',

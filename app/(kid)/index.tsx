@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { View, Text, TouchableOpacity, StyleSheet, Alert, ActivityIndicator, SafeAreaView, Animated } from 'react-native'
-import { create, open, LinkSuccess, LinkExit, LinkTokenConfiguration } from 'react-native-plaid-link-sdk'
+import { View, Text, TouchableOpacity, StyleSheet, Alert, ActivityIndicator, SafeAreaView, Animated, Platform } from 'react-native'
 import { useFocusEffect, useRouter } from 'expo-router'
 import { supabase } from '../../lib/supabase'
 import { createLinkToken } from '../../lib/plaid'
@@ -46,11 +45,15 @@ export default function KidDashboard() {
         .from('users')
         .select('full_name, username')
         .eq('id', user.id)
-        .single()
+        .maybeSingle()
 
-      if (profile?.full_name || profile?.username) {
-        setUserName(profile.full_name || profile.username)
-      }
+      setUserName(
+        (user.user_metadata?.full_name as string) ||
+        profile?.full_name ||
+        (user.user_metadata?.username as string) ||
+        profile?.username ||
+        'User'
+      )
       setProfilePicUrl((user.user_metadata?.profile_pic_url as string) || '')
       await fetchUnreadNotificationCount(user.id)
 
@@ -139,14 +142,23 @@ export default function KidDashboard() {
   async function openPlaidLink() {
     console.log('button pressed, linkToken:', linkToken)
     if (!linkToken) return
+    if (Platform.OS === 'web') {
+      Alert.alert('Bank linking is only available in the mobile app.')
+      return
+    }
+
+    const {
+      create,
+      open,
+    } = require('react-native-plaid-link-sdk') as typeof import('react-native-plaid-link-sdk')
 
     console.log('calling create...')
-    const tokenConfig: LinkTokenConfiguration = { token: linkToken }
+    const tokenConfig = { token: linkToken }
     await create(tokenConfig)
 
     console.log('calling open...')
     open({
-      onSuccess: async (success: LinkSuccess) => {
+      onSuccess: async (success) => {
         const { error } = await supabase.functions.invoke('exchange-public-token', {
           body: {
             public_token: success.publicToken,
@@ -165,7 +177,7 @@ export default function KidDashboard() {
         }
         Alert.alert('Success', 'Bank account connected!')
       },
-      onExit: (exit: LinkExit) => console.log('exit:', exit),
+      onExit: (exit) => console.log('exit:', exit),
     })
   }
 

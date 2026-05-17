@@ -29,6 +29,12 @@ export default function ParentLayout() {
           tabBarIcon: ({ color, size }) => <Ionicons name="notifications-outline" color={color} size={size} />,
         }}
       />
+      <Tabs.Screen
+        name="settings"
+        options={{
+          href: null,
+        }}
+      />
     </Tabs>
   )
 }

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Slot, useRouter, useSegments } from 'expo-router'
 import { supabase } from '../lib/supabase'
 import { Session } from '@supabase/supabase-js'
@@ -13,34 +13,44 @@ export default function RootLayout() {
   const router = useRouter()
   const segments = useSegments()
 
-  useEffect(() => {
-    supabase.auth.getSession().then(async ({ data: { session } }: { data: { session: Session | null } }) => {
-      setSession(session)
-      if (session) {
-        const { data } = await supabase
-          .from('users')
-          .select('role')
-          .eq('id', session.user.id)
-          .single()
-        setRole(data?.role ?? null)
-      }
-      setLoading(false)
-    })
+  const loadRole = useCallback(async (session: Session | null) => {
+    if (!session) {
+      setRole(null)
+      return
+    }
 
-    supabase.auth.onAuthStateChange(async (_event: any, session: Session | null) => {
-  setSession(session)
-  if (session) {
-    const { data } = await supabase
+    const metadataRole = session.user.user_metadata?.role
+    const { data, error } = await supabase
       .from('users')
       .select('role')
       .eq('id', session.user.id)
-      .single()
-    setRole(data?.role ?? null)
-  } else {
-    setRole(null)
-  }
-})
+      .maybeSingle()
+
+    if (error) {
+      console.warn('role load error:', error)
+    }
+
+    setRole(data?.role ?? (typeof metadataRole === 'string' ? metadataRole : null))
   }, [])
+
+  useEffect(() => {
+    supabase.auth.getSession().then(async ({ data: { session } }: { data: { session: Session | null } }) => {
+      setSession(session)
+      await loadRole(session)
+      setLoading(false)
+    })
+
+    const { data: authListener } = supabase.auth.onAuthStateChange((_event: any, session: Session | null) => {
+      setSession(session)
+      setTimeout(() => {
+        loadRole(session)
+      }, 0)
+    })
+
+    return () => {
+      authListener.subscription.unsubscribe()
+    }
+  }, [loadRole])
 
   useEffect(() => {
     if (loading) return
@@ -50,7 +60,7 @@ export default function RootLayout() {
     const inParentGroup = segments[0] === '(parent)'
 
     if (!session && !inAuthGroup) {
-      router.replace('/login' as any)
+      router.replace('/(auth)/login' as any)
     } else if (session && role === 'kid' && !inKidGroup) {
       router.replace('/(kid)')
     } else if (session && role === 'parent' && !inParentGroup) {

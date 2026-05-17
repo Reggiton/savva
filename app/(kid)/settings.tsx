@@ -25,6 +25,13 @@ export default function KidSettings() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [userId, setUserId] = useState<string | null>(null)
+  const [initialData, setInitialData] = useState({
+    name: '',
+    username: '',
+    email: '',
+    phone: '',
+    profilePicUrl: '',
+  })
   const [name, setName] = useState('')
   const [username, setUsername] = useState('')
   const [email, setEmail] = useState('')
@@ -51,11 +58,23 @@ export default function KidSettings() {
         .from('users')
         .select('full_name, username')
         .eq('id', user.id)
-        .single()
+        .maybeSingle()
 
       const profile = data as Profile | null
-      setName(profile?.full_name || (user.user_metadata?.full_name as string) || '')
-      setUsername(profile?.username || (user.user_metadata?.username as string) || '')
+      const userData = {
+        name: (user.user_metadata?.full_name as string) || profile?.full_name || '',
+        username: (user.user_metadata?.username as string) || profile?.username || '',
+        email: user.email || '',
+        phone: (user.user_metadata?.phone as string) || user.phone || '',
+        profilePicUrl: (user.user_metadata?.profile_pic_url as string) || '',
+      }
+
+      setInitialData(userData)
+      setName(userData.name)
+      setUsername(userData.username)
+      setEmail(userData.email)
+      setPhone(userData.phone)
+      setProfilePicUrl(userData.profilePicUrl)
     } catch (error) {
       console.log('settings load error:', error)
     } finally {
@@ -66,8 +85,36 @@ export default function KidSettings() {
   async function saveProfile() {
     if (!userId) return
 
+    const trimmedName = name.trim()
+    const trimmedUsername = username.trim().toLowerCase()
+    const trimmedEmail = email.trim().toLowerCase()
+    const trimmedPhone = phone.trim()
+    const trimmedPicUrl = profilePicUrl.trim()
+    const trimmedPassword = newPassword.trim()
+
+    if (!trimmedName || !trimmedUsername || !trimmedEmail) {
+      Alert.alert('Missing info', 'Name, username, and email are required.')
+      return
+    }
+
+    if (trimmedPassword && trimmedPassword.length < 6) {
+      Alert.alert('Password too short', 'New password must be at least 6 characters.')
+      return
+    }
+
     setSaving(true)
     try {
+      if (trimmedUsername !== initialData.username) {
+        const { data: existing, error: checkError } = await supabase
+          .from('users')
+          .select('id')
+          .eq('username', trimmedUsername)
+          .maybeSingle()
+
+        if (checkError) throw checkError
+        if (existing && existing.id !== userId) throw new Error('Username is already taken.')
+      }
+
       const authUpdates: {
         email?: string
         password?: string
@@ -79,15 +126,15 @@ export default function KidSettings() {
         }
       } = {
         data: {
-          full_name: name.trim(),
-          username: username.trim(),
-          phone: phone.trim(),
-          profile_pic_url: profilePicUrl.trim(),
+          full_name: trimmedName,
+          username: trimmedUsername,
+          phone: trimmedPhone,
+          profile_pic_url: trimmedPicUrl,
         },
       }
 
-      if (email.trim()) authUpdates.email = email.trim()
-      if (newPassword.trim()) authUpdates.password = newPassword.trim()
+      if (trimmedEmail !== initialData.email) authUpdates.email = trimmedEmail
+      if (trimmedPassword) authUpdates.password = trimmedPassword
 
       if (Object.keys(authUpdates).length > 0) {
         const { error } = await supabase.auth.updateUser(authUpdates)
@@ -96,14 +143,23 @@ export default function KidSettings() {
 
       const { error: profileError } = await supabase
         .from('users')
-        .update({
-          full_name: name.trim(),
-          username: username.trim(),
-        })
-        .eq('id', userId)
+        .upsert({
+          id: userId,
+          full_name: trimmedName,
+          username: trimmedUsername,
+          email: trimmedEmail,
+          role: 'kid',
+        }, { onConflict: 'id' })
 
       if (profileError) throw profileError
 
+      setInitialData({
+        name: trimmedName,
+        username: trimmedUsername,
+        email: trimmedEmail,
+        phone: trimmedPhone,
+        profilePicUrl: trimmedPicUrl,
+      })
       setNewPassword('')
       Alert.alert('Saved', 'Your profile was updated.')
     } catch (error: any) {

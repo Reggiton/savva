@@ -1,7 +1,20 @@
 import { useState } from 'react'
-import { View, TextInput, Text, StyleSheet, TouchableOpacity, Button } from 'react-native'
+import {
+  ActivityIndicator,
+  Image,
+  KeyboardAvoidingView,
+  Platform,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from 'react-native'
 import { useRouter } from 'expo-router'
 import { supabase } from '../../lib/supabase'
+import { BorderRadius, Colors, Shadows, Spacing, Typography } from '../../lib/theme'
 
 export default function Signup() {
   const router = useRouter()
@@ -20,55 +33,350 @@ export default function Signup() {
 
     setLoading(true)
     setError('')
+    const normalizedEmail = email.trim().toLowerCase()
+    const normalizedUsername = username.trim().toLowerCase()
 
-    const { error } = await supabase.auth.signUp({
-      email,
+    const { data, error } = await supabase.auth.signUp({
+      email: normalizedEmail,
       password,
       options: {
-        data: { full_name: fullName, username, role }
+        data: { full_name: fullName.trim(), username: normalizedUsername, role }
       }
     })
 
     if (error) setError(error.message)
+    else if (data.user) {
+      const { error: profileError } = await supabase
+        .from('users')
+        .upsert({
+          id: data.user.id,
+          full_name: fullName.trim(),
+          username: normalizedUsername,
+          email: normalizedEmail,
+          role,
+        }, { onConflict: 'id' })
+
+      if (profileError) setError(profileError.message)
+      else router.replace(role === 'kid' ? '/(kid)' : '/(parent)')
+    }
     setLoading(false)
   }
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Create account</Text>
+    <SafeAreaView style={styles.screen}>
+      <KeyboardAvoidingView
+        style={styles.keyboardView}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <ScrollView
+          contentContainerStyle={styles.content}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={styles.brandBlock}>
+            <View style={styles.logoShell}>
+              <Image source={require('../../assets/savva-logo.png')} style={styles.logo} resizeMode="contain" />
+            </View>
+            <Text style={styles.eyebrow}>SAVVA</Text>
+            <Text style={styles.title}>Create account</Text>
+            <Text style={styles.subtitle}>Set up your profile and choose how you use Savva.</Text>
+          </View>
 
-      <TextInput style={styles.input} placeholder="Full name" value={fullName} onChangeText={setFullName} />
-      <TextInput style={styles.input} placeholder="Username" value={username} onChangeText={setUsername} autoCapitalize="none" />
-      <TextInput style={styles.input} placeholder="Email" value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" />
-      <TextInput style={styles.input} placeholder="Password" value={password} onChangeText={setPassword} secureTextEntry />
+          <View style={styles.card}>
+            <View style={styles.field}>
+              <Text style={styles.label}>Full name</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Your name"
+                placeholderTextColor={Colors.textMuted}
+                value={fullName}
+                onChangeText={setFullName}
+                textContentType="name"
+              />
+            </View>
 
-      <Text style={styles.label}>I am a:</Text>
-      <View style={styles.roleRow}>
-        <TouchableOpacity style={[styles.roleBtn, role === 'kid' && styles.roleSelected]} onPress={() => setRole('kid')}>
-          <Text style={[styles.roleTxt, role === 'kid' && styles.roleSelectedTxt]}>Kid</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={[styles.roleBtn, role === 'parent' && styles.roleSelected]} onPress={() => setRole('parent')}>
-          <Text style={[styles.roleTxt, role === 'parent' && styles.roleSelectedTxt]}>Parent</Text>
-        </TouchableOpacity>
-      </View>
+            <View style={styles.field}>
+              <Text style={styles.label}>Username</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="choose_username"
+                placeholderTextColor={Colors.textMuted}
+                value={username}
+                onChangeText={setUsername}
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+            </View>
 
-      {error ? <Text style={styles.error}>{error}</Text> : null}
+            <View style={styles.field}>
+              <Text style={styles.label}>Email</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="you@example.com"
+                placeholderTextColor={Colors.textMuted}
+                value={email}
+                onChangeText={setEmail}
+                autoCapitalize="none"
+                autoCorrect={false}
+                keyboardType="email-address"
+                textContentType="emailAddress"
+              />
+            </View>
 
-      <Button title={loading ? 'Creating account...' : 'Sign up'} onPress={handleSignup} disabled={loading} />
-      <Button title="Already have an account? Log in" onPress={() => router.push('/(auth)/login')} />
-    </View>
+            <View style={styles.field}>
+              <Text style={styles.label}>Password</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Create a password"
+                placeholderTextColor={Colors.textMuted}
+                value={password}
+                onChangeText={setPassword}
+                secureTextEntry
+                textContentType="newPassword"
+              />
+            </View>
+
+            <View style={styles.field}>
+              <Text style={styles.label}>Account type</Text>
+              <View style={styles.roleRow}>
+                <RoleButton label="Kid" selected={role === 'kid'} onPress={() => setRole('kid')} />
+                <RoleButton label="Parent" selected={role === 'parent'} onPress={() => setRole('parent')} />
+              </View>
+            </View>
+
+            {error ? (
+              <View style={styles.errorBox}>
+                <Text style={styles.errorText}>{error}</Text>
+              </View>
+            ) : null}
+
+            <TouchableOpacity
+              style={[styles.primaryButton, loading && styles.disabledButton]}
+              onPress={handleSignup}
+              disabled={loading}
+              activeOpacity={0.82}
+            >
+              {loading ? (
+                <ActivityIndicator color={Colors.textPrimary} />
+              ) : (
+                <Text style={styles.primaryButtonText}>Sign up</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+
+          <TouchableOpacity
+            style={styles.secondaryButton}
+            onPress={() => router.push('/(auth)/login')}
+            activeOpacity={0.75}
+          >
+            <Text style={styles.secondaryText}>Already have an account?</Text>
+            <Text style={styles.secondaryAction}>Log in</Text>
+          </TouchableOpacity>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
+  )
+}
+
+type RoleButtonProps = {
+  label: string
+  selected: boolean
+  onPress: () => void
+}
+
+function RoleButton({ label, selected, onPress }: RoleButtonProps) {
+  return (
+    <TouchableOpacity
+      style={[styles.roleButton, selected && styles.roleButtonSelected]}
+      onPress={onPress}
+      activeOpacity={0.8}
+    >
+      <View style={[styles.roleDot, selected && styles.roleDotSelected]} />
+      <Text style={[styles.roleText, selected && styles.roleTextSelected]}>{label}</Text>
+    </TouchableOpacity>
   )
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 24, justifyContent: 'center' },
-  title: { fontSize: 24, fontWeight: '600', marginBottom: 24 },
-  input: { borderWidth: 1, borderColor: '#ccc', borderRadius: 8, padding: 12, marginBottom: 12 },
-  label: { fontSize: 16, marginBottom: 8 },
-  roleRow: { flexDirection: 'row', gap: 12, marginBottom: 16 },
-  roleBtn: { flex: 1, padding: 12, borderWidth: 1, borderColor: '#ccc', borderRadius: 8, alignItems: 'center' },
-  roleSelected: { backgroundColor: '#000', borderColor: '#000' },
-  roleTxt: { fontSize: 16 },
-  roleSelectedTxt: { color: '#fff' },
-  error: { color: 'red', marginBottom: 12 },
+  screen: {
+    flex: 1,
+    backgroundColor: Colors.background,
+  },
+  keyboardView: {
+    flex: 1,
+  },
+  content: {
+    flexGrow: 1,
+    justifyContent: 'center',
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.md,
+  },
+  brandBlock: {
+    alignItems: 'center',
+    marginBottom: Spacing.md,
+  },
+  logoShell: {
+    width: 72,
+    height: 72,
+    borderRadius: BorderRadius.lg,
+    backgroundColor: Colors.cardBackground,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: Spacing.md,
+    ...Shadows.medium,
+  },
+  logo: {
+    width: 54,
+    height: 54,
+  },
+  eyebrow: {
+    color: Colors.primaryLight,
+    fontSize: Typography.caption,
+    fontWeight: '900',
+    letterSpacing: 1.4,
+    marginBottom: Spacing.xs,
+  },
+  title: {
+    color: Colors.textPrimary,
+    fontSize: Typography.h3,
+    fontWeight: '900',
+    textAlign: 'center',
+  },
+  subtitle: {
+    color: Colors.textSecondary,
+    fontSize: Typography.bodySmall,
+    lineHeight: 20,
+    textAlign: 'center',
+    marginTop: Spacing.xs,
+    maxWidth: 420,
+  },
+  card: {
+    width: '100%',
+    maxWidth: 460,
+    alignSelf: 'center',
+    backgroundColor: Colors.cardBackground,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    padding: 12,
+    ...Shadows.medium,
+  },
+  field: {
+    marginBottom: 6,
+  },
+  label: {
+    color: Colors.textSecondary,
+    fontSize: Typography.caption,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+    marginBottom: 3,
+    textTransform: 'uppercase',
+  },
+  input: {
+    minHeight: 42,
+    backgroundColor: Colors.cardBackgroundAlt,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    color: Colors.textPrimary,
+    fontSize: Typography.body,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 12,
+  },
+  roleRow: {
+    flexDirection: 'row',
+    gap: Spacing.sm,
+  },
+  roleButton: {
+    flex: 1,
+    minHeight: 42,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    backgroundColor: Colors.cardBackgroundAlt,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: Spacing.md,
+  },
+  roleButtonSelected: {
+    borderColor: Colors.primary,
+    backgroundColor: Colors.primaryDark,
+  },
+  roleDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    borderWidth: 1,
+    borderColor: Colors.textMuted,
+    marginRight: Spacing.sm,
+  },
+  roleDotSelected: {
+    backgroundColor: Colors.textPrimary,
+    borderColor: Colors.textPrimary,
+  },
+  roleText: {
+    color: Colors.textSecondary,
+    fontSize: Typography.bodySmall,
+    fontWeight: '800',
+  },
+  roleTextSelected: {
+    color: Colors.textPrimary,
+  },
+  errorBox: {
+    backgroundColor: 'rgba(239, 83, 80, 0.12)',
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    borderColor: Colors.error,
+    padding: Spacing.md,
+    marginBottom: Spacing.md,
+  },
+  errorText: {
+    color: Colors.error,
+    fontSize: Typography.bodySmall,
+    fontWeight: '700',
+    lineHeight: 20,
+  },
+  primaryButton: {
+    minHeight: 46,
+    borderRadius: BorderRadius.md,
+    backgroundColor: Colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...Shadows.medium,
+  },
+  disabledButton: {
+    opacity: 0.65,
+  },
+  primaryButtonText: {
+    color: Colors.textPrimary,
+    fontSize: Typography.body,
+    fontWeight: '900',
+  },
+  secondaryButton: {
+    width: '100%',
+    maxWidth: 460,
+    alignSelf: 'center',
+    minHeight: 44,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: Spacing.md,
+    backgroundColor: Colors.cardBackground,
+  },
+  secondaryText: {
+    color: Colors.textSecondary,
+    fontSize: Typography.caption,
+    fontWeight: '700',
+  },
+  secondaryAction: {
+    color: Colors.primaryLight,
+    fontSize: Typography.bodySmall,
+    fontWeight: '900',
+    marginTop: 2,
+  },
 })

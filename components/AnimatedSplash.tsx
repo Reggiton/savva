@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { Animated, Image, StyleSheet, View } from 'react-native'
+import { Animated, Image, StyleSheet, Text, View } from 'react-native'
 import { Colors } from '../lib/theme'
 
 type AnimatedSplashProps = {
@@ -44,7 +44,7 @@ export default function AnimatedSplash({ onFinish }: AnimatedSplashProps) {
           useNativeDriver: true,
         }),
       ]),
-      Animated.delay(680),
+      Animated.delay(1600),
       Animated.parallel([
         Animated.timing(opacity, {
           toValue: 0,
@@ -72,12 +72,16 @@ export default function AnimatedSplash({ onFinish }: AnimatedSplashProps) {
         ]}
       />
       <Animated.View
-        style={{
+        style={[
+          styles.logoBlock,
+          {
           opacity: logoOpacity,
           transform: [{ translateY: logoTranslateY }, { scale: logoScale }],
-        }}
+          },
+        ]}
       >
         <Image source={require('../assets/savva-logo.png')} style={styles.logo} resizeMode="contain" />
+        <Text style={styles.wordmark}>SAVVA</Text>
       </Animated.View>
     </Animated.View>
   )
@@ -90,7 +94,7 @@ const styles = StyleSheet.create({
     elevation: 1000,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#121212',
+    backgroundColor: Colors.background,
   },
   glow: {
     position: 'absolute',
@@ -106,5 +110,15 @@ const styles = StyleSheet.create({
   logo: {
     width: 220,
     height: 220,
+  },
+  logoBlock: {
+    alignItems: 'center',
+  },
+  wordmark: {
+    color: Colors.primaryLight,
+    fontSize: 14,
+    fontWeight: '900',
+    letterSpacing: 3,
+    marginTop: -22,
   },
 })
