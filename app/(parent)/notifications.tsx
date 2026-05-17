@@ -24,12 +24,23 @@ export default function ParentNotifications() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    supabase.auth.getUser().then(async ({ data: { user } }) => {
-      if (user) {
+    async function loadNotifications() {
+      try {
+        const { data: { user } } = await supabase.auth.getUser()
+
+        if (!user) {
+          return
+        }
+
         await fetchNotifications(user.id)
+      } catch (error) {
+        console.log('parent notifications load error:', error)
+      } finally {
         setLoading(false)
       }
-    })
+    }
+
+    loadNotifications()
   }, [])
 
   async function fetchNotifications(uid: string) {

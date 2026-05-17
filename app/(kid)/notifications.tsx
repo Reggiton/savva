@@ -1,9 +1,18 @@
-import { useEffect, useState } from 'react'
-import { View, Text, FlatList, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native'
-import { supabase } from '../../lib/supabase'
+import { useState } from 'react'
+import {
+  ActivityIndicator,
+  FlatList,
+  RefreshControl,
+  SafeAreaView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native'
 import { useFocusEffect } from 'expo-router'
 import { useCallback } from 'react'
-import { RefreshControl } from 'react-native'
+import { supabase } from '../../lib/supabase'
+import { BorderRadius, Colors, Shadows, Spacing, Typography } from '../../lib/theme'
 
 type Notification = {
   id: string
@@ -13,14 +22,14 @@ type Notification = {
   created_at: string
 }
 
-const TYPE_ICONS: { [key: string]: string } = {
-  connection_request: '👋',
-  request_accepted: '✅',
-  request_declined: '❌',
-  access_revoked: '🚫',
-  blocked: '⛔',
-  visibility_toggled: '👁',
-  account_deleted: '🗑',
+const TYPE_LABELS: { [key: string]: string } = {
+  connection_request: 'Request',
+  request_accepted: 'Accepted',
+  request_declined: 'Declined',
+  access_revoked: 'Revoked',
+  blocked: 'Blocked',
+  visibility_toggled: 'Visibility',
+  account_deleted: 'Deleted',
 }
 
 export default function KidNotifications() {
@@ -30,22 +39,32 @@ export default function KidNotifications() {
 
   useFocusEffect(
     useCallback(() => {
-      supabase.auth.getUser().then(async ({ data: { user } }) => {
-        if (user) {
+      async function loadNotifications() {
+        try {
+          const { data: { user } } = await supabase.auth.getUser()
+
+          if (!user) return
+
           await fetchNotifications(user.id)
+        } catch (error) {
+          console.log('kid notifications load error:', error)
+        } finally {
           setLoading(false)
         }
-      })
+      }
+
+      loadNotifications()
     }, [])
   )
 
   async function onRefresh() {
     setRefreshing(true)
-    const { data: { user } } = await supabase.auth.getUser()
-    if (user) {
-      await fetchNotifications(user.id)
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) await fetchNotifications(user.id)
+    } finally {
+      setRefreshing(false)
     }
-    setRefreshing(false)
   }
 
   async function fetchNotifications(uid: string) {
@@ -54,17 +73,18 @@ export default function KidNotifications() {
       .select('id, type, message, read, created_at')
       .eq('user_id', uid)
       .order('created_at', { ascending: false })
+
     if (data) setNotifications(data)
   }
 
   async function markAsRead(id: string) {
     await supabase.from('notifications').update({ read: true }).eq('id', id)
-    setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n))
+    setNotifications((prev) => prev.map((notification) => notification.id === id ? { ...notification, read: true } : notification))
   }
 
   async function markAllRead(uid: string) {
     await supabase.from('notifications').update({ read: true }).eq('user_id', uid)
-    setNotifications(prev => prev.map(n => ({ ...n, read: true })))
+    setNotifications((prev) => prev.map((notification) => ({ ...notification, read: true })))
   }
 
   function formatDate(dateStr: string) {
@@ -72,27 +92,30 @@ export default function KidNotifications() {
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
   }
 
-  const unreadCount = notifications.filter(n => !n.read).length
+  const unreadCount = notifications.filter((notification) => !notification.read).length
 
   if (loading) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator size="large" />
+        <ActivityIndicator size="large" color={Colors.primary} />
       </View>
     )
   }
 
   return (
-    <View style={styles.container}>
-      <View style={styles.headerRow}>
-        <Text style={styles.title}>
-          Notifications {unreadCount > 0 && <Text style={styles.badge}> {unreadCount} </Text>}
-        </Text>
+    <SafeAreaView style={styles.container}>
+      <View style={styles.header}>
+        <View>
+          <Text style={styles.eyebrow}>ACTIVITY</Text>
+          <Text style={styles.title}>Notifications</Text>
+        </View>
         {unreadCount > 0 && (
-          <TouchableOpacity onPress={async () => {
-            const { data: { user } } = await supabase.auth.getUser()
-            if (user) markAllRead(user.id)
-          }}>
+          <TouchableOpacity
+            onPress={async () => {
+              const { data: { user } } = await supabase.auth.getUser()
+              if (user) markAllRead(user.id)
+            }}
+          >
             <Text style={styles.markAllBtn}>Mark all read</Text>
           </TouchableOpacity>
         )}
@@ -100,45 +123,84 @@ export default function KidNotifications() {
 
       <FlatList
         data={notifications}
-        keyExtractor={item => item.id}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+        keyExtractor={(item) => item.id}
+        contentContainerStyle={styles.listContent}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={Colors.primary}
+            colors={[Colors.primary]}
+            progressBackgroundColor={Colors.cardBackground}
+          />
+        }
         renderItem={({ item }) => (
           <TouchableOpacity
             style={[styles.card, !item.read && styles.unread]}
             onPress={() => markAsRead(item.id)}
+            activeOpacity={0.85}
           >
-            <Text style={styles.icon}>{TYPE_ICONS[item.type] || '🔔'}</Text>
+            <View style={styles.badge}>
+              <Text style={styles.badgeText}>{TYPE_LABELS[item.type]?.slice(0, 2).toUpperCase() || 'NO'}</Text>
+            </View>
             <View style={styles.cardContent}>
+              <View style={styles.messageRow}>
+                <Text style={styles.type}>{TYPE_LABELS[item.type] || 'Notification'}</Text>
+                {!item.read && <View style={styles.dot} />}
+              </View>
               <Text style={styles.message}>{item.message}</Text>
               <Text style={styles.date}>{formatDate(item.created_at)}</Text>
             </View>
-            {!item.read && <View style={styles.dot} />}
           </TouchableOpacity>
         )}
         ListEmptyComponent={
           <View style={styles.emptyCard}>
-            <Text style={styles.emptyTxt}>No notifications yet.</Text>
+            <Text style={styles.emptyTitle}>No notifications yet</Text>
+            <Text style={styles.emptyTxt}>Updates from connections will appear here.</Text>
           </View>
         }
       />
-    </View>
+    </SafeAreaView>
   )
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 16 },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
-  title: { fontSize: 24, fontWeight: '600' },
-  badge: { fontSize: 14, backgroundColor: '#ff3b30', color: '#fff', borderRadius: 10, paddingHorizontal: 6 },
-  markAllBtn: { color: '#007AFF', fontSize: 14 },
-  card: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#f5f5f5', borderRadius: 12, padding: 16, marginBottom: 8 },
-  unread: { backgroundColor: '#e8f0fe' },
-  icon: { fontSize: 24, marginRight: 12 },
+  container: { flex: 1, backgroundColor: Colors.background },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: Colors.background },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', paddingHorizontal: Spacing.lg, paddingTop: Spacing.xl, paddingBottom: Spacing.md },
+  eyebrow: { fontSize: Typography.caption, color: Colors.textSecondary, fontWeight: '800', letterSpacing: 1.2 },
+  title: { fontSize: Typography.h2, fontWeight: '800', color: Colors.textPrimary, marginTop: Spacing.xs },
+  markAllBtn: { color: Colors.primary, fontSize: Typography.bodySmall, fontWeight: '800', paddingTop: Spacing.xs },
+  listContent: { paddingHorizontal: Spacing.lg, paddingBottom: Spacing.xl },
+  card: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.cardBackground,
+    borderRadius: BorderRadius.lg,
+    padding: Spacing.lg,
+    marginBottom: Spacing.md,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    ...Shadows.medium,
+  },
+  unread: { borderColor: Colors.primary, backgroundColor: Colors.cardBackgroundAlt },
+  badge: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: Colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: Spacing.md,
+  },
+  badgeText: { color: Colors.textPrimary, fontWeight: '900', fontSize: Typography.caption },
   cardContent: { flex: 1 },
-  message: { fontSize: 15, color: '#333', marginBottom: 4 },
-  date: { fontSize: 12, color: '#999' },
-  dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#007AFF' },
-  emptyCard: { backgroundColor: '#f5f5f5', borderRadius: 12, padding: 24, alignItems: 'center', marginTop: 16 },
-  emptyTxt: { color: '#999', fontSize: 14 },
+  messageRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  type: { fontSize: Typography.caption, color: Colors.primary, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 1 },
+  message: { fontSize: Typography.bodySmall, color: Colors.textPrimary, marginTop: 4, marginBottom: 4, lineHeight: 20 },
+  date: { fontSize: Typography.caption, color: Colors.textMuted },
+  dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: Colors.primary },
+  emptyCard: { backgroundColor: Colors.cardBackground, borderRadius: BorderRadius.lg, padding: Spacing.xl, alignItems: 'center', borderWidth: 1, borderColor: Colors.border },
+  emptyTitle: { color: Colors.textPrimary, fontSize: Typography.body, fontWeight: '800', marginBottom: Spacing.xs },
+  emptyTxt: { color: Colors.textMuted, fontSize: Typography.bodySmall, textAlign: 'center' },
 })

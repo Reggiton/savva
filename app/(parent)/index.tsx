@@ -41,13 +41,24 @@ export default function ParentHome() {
 
   useFocusEffect(
     useCallback(() => {
-      supabase.auth.getUser().then(async ({ data: { user } }) => {
-        if (user) {
+      async function loadParentHome() {
+        try {
+          const { data: { user } } = await supabase.auth.getUser()
+
+          if (!user) {
+            return
+          }
+
           setUserId(user.id)
           await fetchConnections(user.id)
+        } catch (error) {
+          console.log('parent home load error:', error)
+        } finally {
           setLoading(false)
         }
-      })
+      }
+
+      loadParentHome()
     }, [])
   )
 
