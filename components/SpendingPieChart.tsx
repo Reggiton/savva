@@ -13,6 +13,9 @@ interface SpendingPieChartProps {
   slices: SpendingSlice[]
   size?: number
   totalLabel?: string
+  // optional controlled selection
+  selectedIndex?: number | null
+  onSelect?: (index: number | null) => void
 }
 
 function polarToCartesian(center: number, radius: number, angle: number) {
@@ -42,8 +45,16 @@ function formatCategory(category: string) {
     .replace(/\b\w/g, (letter) => letter.toUpperCase())
 }
 
-export default function SpendingPieChart({ slices, size = 220, totalLabel = 'Monthly spending' }: SpendingPieChartProps) {
-  const [selectedIndex, setSelectedIndex] = useState<number | null>(null)
+export default function SpendingPieChart({
+  slices,
+  size = 220,
+  totalLabel = 'Monthly spending',
+  selectedIndex: selectedIndexProp,
+  onSelect,
+}: SpendingPieChartProps) {
+  const [internalSelectedIndex, setInternalSelectedIndex] = useState<number | null>(null)
+  const isControlled = selectedIndexProp !== undefined
+  const selectedIndex = isControlled ? selectedIndexProp : internalSelectedIndex
   const radius = size / 2 - 18
   const center = size / 2
   const total = slices.reduce((sum, slice) => sum + Math.abs(slice.amount), 0)
@@ -94,6 +105,12 @@ export default function SpendingPieChart({ slices, size = 220, totalLabel = 'Mon
             const isSelected = arc.index === selectedIndex
             const isDimmed = selectedIndex !== null && !isSelected
 
+            const handlePress = () => {
+              const newIndex = isSelected ? null : arc.index
+              if (onSelect) onSelect(newIndex)
+              if (!isControlled) setInternalSelectedIndex(newIndex)
+            }
+
             return (
             <Path
               key={arc.category}
@@ -103,7 +120,7 @@ export default function SpendingPieChart({ slices, size = 220, totalLabel = 'Mon
               strokeLinecap="butt"
               opacity={isDimmed ? 0.22 : 1}
               fill="transparent"
-              onPress={() => setSelectedIndex(isSelected ? null : arc.index)}
+              onPress={handlePress}
             />
             )
           })}

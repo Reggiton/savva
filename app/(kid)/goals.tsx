@@ -16,6 +16,7 @@ import { useFocusEffect } from 'expo-router'
 import { useCallback } from 'react'
 import { supabase } from '../../lib/supabase'
 import { BorderRadius, Colors, Shadows, Spacing, Typography } from '../../lib/theme'
+import { formatCategoryLabel } from '../../lib/spending'
 
 type Goal = {
   id: string
@@ -207,6 +208,17 @@ export default function Goals() {
           const limit = goal?.monthly_limit || 0
           const progress = limit > 0 ? Math.min(spent / limit, 1) : 0
           const overLimit = limit > 0 && spent > limit
+          const categoryLabel = CATEGORY_LABELS[item]
+
+          function showCategoryHelp() {
+            const isGoalSet = !!goal
+            Alert.alert(
+              `${categoryLabel} help`,
+              isGoalSet
+                ? `This limit helps you control ${formatCategoryLabel(item).toLowerCase()} spending. You are at ${Math.round(progress * 100)}% of your goal, which is a useful signal for whether you should slow down or keep going.`
+                : `Setting a monthly limit for ${formatCategoryLabel(item).toLowerCase()} gives you a simple guardrail. It helps you notice when a category is taking over your budget.`
+            )
+          }
 
           return (
             <View style={styles.card}>
@@ -219,6 +231,9 @@ export default function Goals() {
                 </View>
 
                 <View style={styles.cardActions}>
+                  <TouchableOpacity style={styles.helpButton} onPress={showCategoryHelp}>
+                    <Text style={styles.helpText}>?</Text>
+                  </TouchableOpacity>
                   <TouchableOpacity onPress={() => openModal(item)}>
                     <Text style={styles.editBtn}>{goal ? 'Edit' : 'Set'}</Text>
                   </TouchableOpacity>
@@ -304,6 +319,8 @@ const styles = StyleSheet.create({
   categoryLabel: { fontSize: Typography.body, fontWeight: '800', color: Colors.textPrimary },
   categoryMeta: { fontSize: Typography.caption, color: Colors.textMuted, marginTop: 3 },
   cardActions: { flexDirection: 'row', gap: 12 },
+  helpButton: { width: 20, height: 20, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.progressBackground },
+  helpText: { color: Colors.textPrimary, fontSize: Typography.caption, fontWeight: '900' },
   editBtn: { color: Colors.primary, fontSize: Typography.bodySmall, fontWeight: '800' },
   deleteBtn: { color: Colors.error, fontSize: Typography.bodySmall, fontWeight: '800' },
   progressBg: { height: 8, backgroundColor: Colors.progressBackground, borderRadius: BorderRadius.full, marginBottom: Spacing.sm, overflow: 'hidden' },

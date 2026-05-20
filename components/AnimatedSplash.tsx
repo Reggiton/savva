@@ -4,17 +4,29 @@ import { Colors } from '../lib/theme'
 
 type AnimatedSplashProps = {
   onFinish: () => void
+  playFull?: boolean
 }
 
-export default function AnimatedSplash({ onFinish }: AnimatedSplashProps) {
+export default function AnimatedSplash({ onFinish, playFull = true }: AnimatedSplashProps) {
   const opacity = useRef(new Animated.Value(1)).current
   const logoOpacity = useRef(new Animated.Value(0)).current
   const logoScale = useRef(new Animated.Value(0.86)).current
   const logoTranslateY = useRef(new Animated.Value(18)).current
   const glowScale = useRef(new Animated.Value(0.7)).current
   const glowOpacity = useRef(new Animated.Value(0)).current
+  const onFinishRef = useRef(onFinish)
 
   useEffect(() => {
+    onFinishRef.current = onFinish
+  }, [onFinish])
+
+  useEffect(() => {
+    if (!playFull) {
+      // quick exit when we don't want to run full animation
+      const t = setTimeout(() => onFinishRef.current(), 80)
+      return () => clearTimeout(t)
+    }
+
     Animated.sequence([
       Animated.parallel([
         Animated.timing(logoOpacity, {
@@ -57,8 +69,8 @@ export default function AnimatedSplash({ onFinish }: AnimatedSplashProps) {
           useNativeDriver: true,
         }),
       ]),
-    ]).start(onFinish)
-  }, [glowOpacity, glowScale, logoOpacity, logoScale, logoTranslateY, onFinish, opacity])
+    ]).start(() => onFinishRef.current())
+  }, [glowOpacity, glowScale, logoOpacity, logoScale, logoTranslateY, opacity, playFull])
 
   return (
     <Animated.View pointerEvents="none" style={[styles.container, { opacity }]}>

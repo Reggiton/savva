@@ -13,6 +13,8 @@ import {
 } from 'react-native'
 import { useRouter } from 'expo-router'
 import { supabase } from '../../lib/supabase'
+import { isOnboardingComplete } from '../../lib/onboarding'
+import { trackEvent } from '../../lib/metrics'
 import { BorderRadius, Colors, Shadows, Spacing, Typography } from '../../lib/theme'
 
 export default function Login() {
@@ -69,9 +71,13 @@ export default function Login() {
           }, { onConflict: 'id' })
       }
 
-      if (resolvedRole === 'kid') router.replace('/(kid)')
-      else if (resolvedRole === 'parent') router.replace('/(parent)')
-      else setError('Your account is missing a role. Please contact support.')
+      if (resolvedRole === 'kid' || resolvedRole === 'parent') {
+        const complete = await isOnboardingComplete()
+        await trackEvent('login_success', { role: resolvedRole, onboardingComplete: complete })
+        router.replace(complete ? (resolvedRole === 'kid' ? '/(kid)' : '/(parent)') : '/(auth)/welcome')
+      } else {
+        setError('Your account is missing a role. Please contact support.')
+      }
     }
     setLoading(false)
   }
@@ -90,6 +96,11 @@ export default function Login() {
             <Text style={styles.eyebrow}>SAVVA</Text>
             <Text style={styles.title}>Welcome back</Text>
             <Text style={styles.subtitle}>Sign in to see your money, goals, and connections.</Text>
+          </View>
+
+          <View style={styles.infoCard}>
+            <Text style={styles.infoTitle}>What Savva does</Text>
+            <Text style={styles.infoText}>Kids see spending patterns and goal nudges. Parents see coaching signals and recent updates.</Text>
           </View>
 
           <View style={styles.card}>
@@ -209,6 +220,28 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: Spacing.xs,
     maxWidth: 280,
+  },
+  infoCard: {
+    width: '100%',
+    maxWidth: 460,
+    alignSelf: 'center',
+    backgroundColor: Colors.cardBackgroundAlt,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    padding: Spacing.md,
+    marginBottom: Spacing.md,
+  },
+  infoTitle: {
+    color: Colors.textPrimary,
+    fontSize: Typography.bodySmall,
+    fontWeight: '900',
+    marginBottom: 4,
+  },
+  infoText: {
+    color: Colors.textSecondary,
+    fontSize: Typography.bodySmall,
+    lineHeight: 20,
   },
   card: {
     width: '100%',

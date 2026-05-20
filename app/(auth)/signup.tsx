@@ -14,6 +14,8 @@ import {
 } from 'react-native'
 import { useRouter } from 'expo-router'
 import { supabase } from '../../lib/supabase'
+import { isOnboardingComplete } from '../../lib/onboarding'
+import { trackEvent } from '../../lib/metrics'
 import { BorderRadius, Colors, Shadows, Spacing, Typography } from '../../lib/theme'
 
 export default function Signup() {
@@ -57,7 +59,11 @@ export default function Signup() {
         }, { onConflict: 'id' })
 
       if (profileError) setError(profileError.message)
-      else router.replace(role === 'kid' ? '/(kid)' : '/(parent)')
+      else {
+        const complete = await isOnboardingComplete()
+        await trackEvent('signup_success', { role, onboardingComplete: complete })
+        router.replace(complete ? (role === 'kid' ? '/(kid)' : '/(parent)') : '/(auth)/welcome')
+      }
     }
     setLoading(false)
   }
@@ -80,6 +86,11 @@ export default function Signup() {
             <Text style={styles.eyebrow}>SAVVA</Text>
             <Text style={styles.title}>Create account</Text>
             <Text style={styles.subtitle}>Set up your profile and choose how you use Savva.</Text>
+          </View>
+
+          <View style={styles.infoCard}>
+            <Text style={styles.infoTitle}>Before you start</Text>
+            <Text style={styles.infoText}>Kids get a clearer view of spending. Parents get coaching and recent updates. Pick the role that matches how you want to use Savva.</Text>
           </View>
 
           <View style={styles.card}>
@@ -251,6 +262,28 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: Spacing.xs,
     maxWidth: 420,
+  },
+  infoCard: {
+    width: '100%',
+    maxWidth: 460,
+    alignSelf: 'center',
+    backgroundColor: Colors.cardBackgroundAlt,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    padding: Spacing.md,
+    marginBottom: Spacing.md,
+  },
+  infoTitle: {
+    color: Colors.textPrimary,
+    fontSize: Typography.bodySmall,
+    fontWeight: '900',
+    marginBottom: 4,
+  },
+  infoText: {
+    color: Colors.textSecondary,
+    fontSize: Typography.bodySmall,
+    lineHeight: 20,
   },
   card: {
     width: '100%',

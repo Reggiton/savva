@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { View, Text, TouchableOpacity, StyleSheet, Alert, ActivityIndicator, SafeAreaView, Animated, Platform } from 'react-native'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { View, Text, TouchableOpacity, StyleSheet, Alert, ActivityIndicator, SafeAreaView, Animated, Platform, Pressable, Easing } from 'react-native'
 import { useFocusEffect, useRouter } from 'expo-router'
 import { supabase } from '../../lib/supabase'
 import { createLinkToken } from '../../lib/plaid'
@@ -7,7 +7,8 @@ import RefreshableScrollView from '../../components/RefreshableScrollView'
 import Header from '../../components/Header'
 import SpendingPieChart, { SpendingSlice } from '../../components/SpendingPieChart'
 import { Colors, Typography, Spacing, BorderRadius, Shadows } from '../../lib/theme'
-import { getMoneyInTotal, getMonthStartDateString, isEverydaySpending } from '../../lib/spending'
+import { formatCategoryLabel, getGoalNudges, getMoneyInTotal, getMonthStartDateString, getSpendingByCategory, isEverydaySpending, SpendingGoal } from '../../lib/spending'
+import { trackEvent } from '../../lib/metrics'
 
 type Transaction = {
   id: string
@@ -20,15 +21,41 @@ type Transaction = {
 export default function KidDashboard() {
   const router = useRouter()
   const insightTransition = useRef(new Animated.Value(0)).current
+  const insightIdle = useRef(new Animated.Value(0)).current
   const [userId, setUserId] = useState<string | null>(null)
   const [userName, setUserName] = useState('User')
   const [profilePicUrl, setProfilePicUrl] = useState('')
   const [linkToken, setLinkToken] = useState<string | null>(null)
   const [hasAccount, setHasAccount] = useState(false)
   const [transactions, setTransactions] = useState<Transaction[]>([])
+  const [goals, setGoals] = useState<SpendingGoal[]>([])
   const [loading, setLoading] = useState(true)
   const [syncing, setSyncing] = useState(false)
+  const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null)
   const [unreadNotificationCount, setUnreadNotificationCount] = useState(0)
+  const [chartSelectedIndex, setChartSelectedIndex] = useState<number | null>(null)
+
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(insightIdle, {
+          toValue: 1,
+          duration: 2000,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true,
+        }),
+        Animated.timing(insightIdle, {
+          toValue: 0,
+          duration: 2000,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true,
+        }),
+      ])
+    )
+
+    loop.start()
+    return () => loop.stop()
+  }, [insightIdle])
 
   useEffect(() => {
     async function loadDashboard() {
@@ -59,9 +86,17 @@ export default function KidDashboard() {
 
       const connected = await checkAccount(user.id)
 
+      await fetchGoals(user.id)
+
+      await trackEvent('dashboard_viewed', {
+        role: 'kid',
+        connected_account: connected,
+      })
+
         if (connected) {
           await syncTransactions(user.id)
           await fetchTransactions(user.id)
+          setLastSyncedAt(new Date().toISOString())
         }
 
         const token = await createLinkToken(user.id)
@@ -88,55 +123,96 @@ export default function KidDashboard() {
   )
 
   async function fetchUnreadNotificationCount(uid: string) {
-    const { count } = await supabase
-      .from('notifications')
-      .select('id', { count: 'exact', head: true })
-      .eq('user_id', uid)
-      .eq('read', false)
+    try {
+      const { count } = await supabase
+        .from('notifications')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', uid)
+        .eq('read', false)
 
-    setUnreadNotificationCount(count ?? 0)
+      setUnreadNotificationCount(count ?? 0)
+    } catch (err) {
+      console.error('fetchUnreadNotificationCount error:', err)
+    }
   }
 
   async function checkAccount(uid: string): Promise<boolean> {
-    const { data } = await supabase
-      .from('plaid_accounts')
-      .select('id')
-      .eq('user_id', uid)
-      .single()
-    setHasAccount(!!data)
-    return !!data
+    try {
+      const { data } = await supabase
+        .from('plaid_accounts')
+        .select('id')
+        .eq('user_id', uid)
+        .single()
+      setHasAccount(!!data)
+      return !!data
+    } catch (err) {
+      console.error('checkAccount error:', err)
+      return false
+    }
   }
 
   async function handleRefresh() {
-    const { data: { user } } = await supabase.auth.getUser()
+    await trackEvent('refresh_requested', { role: 'kid' })
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
 
-    if (user) {
-      await syncTransactions(user.id)
-      await fetchTransactions(user.id)
-      await fetchUnreadNotificationCount(user.id)
+      if (user) {
+        await syncTransactions(user.id)
+        await fetchTransactions(user.id)
+        await fetchGoals(user.id)
+        await fetchUnreadNotificationCount(user.id)
+        await trackEvent('refresh_completed', { role: 'kid', success: true })
+      }
+    } catch (err) {
+      console.error('refresh error:', err)
+      await trackEvent('refresh_completed', { role: 'kid', success: false })
+      Alert.alert('Refresh failed', 'Unable to refresh dashboard. Please try again.')
     }
   }
 
   async function syncTransactions(uid: string) {
     setSyncing(true)
+    await trackEvent('refresh_requested', { role: 'kid', source: 'sync' })
     try {
       const { error } = await supabase.functions.invoke('sync-transactions', {
         body: { user_id: uid },
       })
-      if (error) console.log('sync error:', error)
+      if (error) {
+        console.error('sync error:', error)
+        Alert.alert('Sync failed', 'There was a problem syncing transactions.')
+      } else {
+        setLastSyncedAt(new Date().toISOString())
+      }
     } finally {
       setSyncing(false)
     }
   }
 
   async function fetchTransactions(uid: string) {
-    const { data } = await supabase
-      .from('transactions')
-      .select('id, merchant_name, category, amount, transaction_date')
-      .eq('user_id', uid)
-      .gte('transaction_date', getMonthStartDateString())
-      .order('transaction_date', { ascending: false })
-    if (data) setTransactions(data)
+    try {
+      const { data } = await supabase
+        .from('transactions')
+        .select('id, merchant_name, category, amount, transaction_date')
+        .eq('user_id', uid)
+        .gte('transaction_date', getMonthStartDateString())
+        .order('transaction_date', { ascending: false })
+      if (data) setTransactions(data)
+    } catch (err) {
+      console.error('fetchTransactions error:', err)
+    }
+  }
+
+  async function fetchGoals(uid: string) {
+    try {
+      const { data } = await supabase
+        .from('goals')
+        .select('category, monthly_limit')
+        .eq('user_id', uid)
+
+      setGoals((data || []) as SpendingGoal[])
+    } catch (err) {
+      console.error('fetchGoals error:', err)
+    }
   }
 
   async function openPlaidLink() {
@@ -146,42 +222,54 @@ export default function KidDashboard() {
       Alert.alert('Bank linking is only available in the mobile app.')
       return
     }
+    try {
+      await trackEvent('bank_link_started', { role: 'kid' })
+      const {
+        create,
+        open,
+      } = require('react-native-plaid-link-sdk') as typeof import('react-native-plaid-link-sdk')
 
-    const {
-      create,
-      open,
-    } = require('react-native-plaid-link-sdk') as typeof import('react-native-plaid-link-sdk')
+      console.log('calling create...')
+      const tokenConfig = { token: linkToken }
+      await create(tokenConfig)
 
-    console.log('calling create...')
-    const tokenConfig = { token: linkToken }
-    await create(tokenConfig)
-
-    console.log('calling open...')
-    open({
-      onSuccess: async (success) => {
-        const { error } = await supabase.functions.invoke('exchange-public-token', {
-          body: {
-            public_token: success.publicToken,
-            user_id: userId,
-            institution_name: success.metadata.institution?.name,
-          },
-        })
-        if (error) {
-          Alert.alert('Error', 'Failed to connect bank account.')
-          return
-        }
-        setHasAccount(true)
-        if (userId) {
-          await syncTransactions(userId)
-          await fetchTransactions(userId)
-        }
-        Alert.alert('Success', 'Bank account connected!')
-      },
-      onExit: (exit) => console.log('exit:', exit),
-    })
+      console.log('calling open...')
+      open({
+        onSuccess: async (success) => {
+          try {
+            const { error } = await supabase.functions.invoke('exchange-public-token', {
+              body: {
+                public_token: success.publicToken,
+                user_id: userId,
+                institution_name: success.metadata.institution?.name,
+              },
+            })
+            if (error) {
+              Alert.alert('Error', 'Failed to connect bank account.')
+              return
+            }
+            setHasAccount(true)
+            await trackEvent('bank_link_completed', { role: 'kid' })
+            if (userId) {
+              await syncTransactions(userId)
+              await fetchTransactions(userId)
+            }
+            Alert.alert('Success', 'Bank account connected!')
+          } catch (err) {
+            console.error('onSuccess handler error:', err)
+            Alert.alert('Error', 'Unexpected error while connecting bank account.')
+          }
+        },
+        onExit: (exit) => console.log('exit:', exit),
+      })
+    } catch (err) {
+      console.error('openPlaidLink error:', err)
+      Alert.alert('Error', 'Unable to start bank linking. Please try again later.')
+    }
   }
 
   function openInsights() {
+    trackEvent('insights_opened', { role: 'kid' })
     insightTransition.setValue(0)
     Animated.timing(insightTransition, {
       toValue: 1,
@@ -192,6 +280,8 @@ export default function KidDashboard() {
 
   const expenseTransactions = transactions.filter(isEverydaySpending)
   const spendingColors = ['#6F55F2', '#2D185F', '#9B7BFF', '#4A2DB4', '#C3B0FF', '#1D123E', '#7D3FE8']
+  const spendingByCategory = useMemo(() => getSpendingByCategory(expenseTransactions), [expenseTransactions])
+  const goalNudges = useMemo(() => getGoalNudges(goals, spendingByCategory), [goals, spendingByCategory])
   const spendingSlices: SpendingSlice[] = Object.values(
     expenseTransactions.reduce<Record<string, SpendingSlice>>((acc, transaction) => {
       const category = transaction.category || 'OTHER'
@@ -209,14 +299,18 @@ export default function KidDashboard() {
   ).sort((a, b) => b.amount - a.amount)
   const topSpendingSlice = spendingSlices[0]
   const moneyInTotal = getMoneyInTotal(transactions)
-  const broadInsight = topSpendingSlice
-    ? `${formatCategory(topSpendingSlice.category)} is your biggest spending area this month. Check your insights for a broader pattern.`
-    : 'Connect an account and spend a little more to unlock a broad monthly insight.'
+  const topGoalNudge = goalNudges[0]
+  const broadInsight = topGoalNudge
+    ? `${topGoalNudge.title}. ${topGoalNudge.action}`
+    : topSpendingSlice
+      ? `${formatCategoryLabel(topSpendingSlice.category)} is your biggest spending area this month. Check your insights for a broader pattern.`
+      : 'Connect an account and spend a little more to unlock a broad monthly insight.'
   const backLayerTransform = {
     transform: [
       { translateX: insightTransition.interpolate({ inputRange: [0, 1], outputRange: [0, -22] }) },
       { translateY: insightTransition.interpolate({ inputRange: [0, 1], outputRange: [0, -28] }) },
       { rotate: insightTransition.interpolate({ inputRange: [0, 1], outputRange: ['6deg', '0deg'] }) },
+      { translateY: insightIdle.interpolate({ inputRange: [0, 1], outputRange: [0, -3] }) },
     ],
   }
   const midLayerTransform = {
@@ -224,6 +318,13 @@ export default function KidDashboard() {
       { translateX: insightTransition.interpolate({ inputRange: [0, 1], outputRange: [0, -16] }) },
       { translateY: insightTransition.interpolate({ inputRange: [0, 1], outputRange: [0, -20] }) },
       { rotate: insightTransition.interpolate({ inputRange: [0, 1], outputRange: ['3deg', '0deg'] }) },
+      { translateY: insightIdle.interpolate({ inputRange: [0, 1], outputRange: [0, -2] }) },
+    ],
+  }
+  const insightCardTransform = {
+    transform: [
+      { translateY: insightIdle.interpolate({ inputRange: [0, 1], outputRange: [0, -2] }) },
+      { scale: insightIdle.interpolate({ inputRange: [0, 1], outputRange: [1, 1.01] }) },
     ],
   }
 
@@ -246,28 +347,49 @@ export default function KidDashboard() {
       />
 
       <RefreshableScrollView onRefresh={handleRefresh} contentContainerStyle={styles.scrollContent}>
-        {!hasAccount && linkToken && (
-          <TouchableOpacity style={styles.connectBtn} onPress={openPlaidLink}>
-            <Text style={styles.connectTxt}>Connect bank account</Text>
-          </TouchableOpacity>
+        {!hasAccount && (
+          <View style={styles.onboardingCard}>
+            <Text style={styles.onboardingEyebrow}>FIRST STEP</Text>
+            <Text style={styles.onboardingTitle}>Connect a bank account</Text>
+            <Text style={styles.onboardingText}>
+              Savva becomes useful once it can show your spending, surface an insight, and help you set a goal.
+            </Text>
+            <View style={styles.onboardingChecklist}>
+              <Text style={styles.onboardingItem}>1. Connect your bank</Text>
+              <Text style={styles.onboardingItem}>2. Review the home chart</Text>
+              <Text style={styles.onboardingItem}>3. Open insights for advice</Text>
+              <Text style={styles.onboardingItem}>4. Set your first goal</Text>
+            </View>
+            {linkToken ? (
+              <TouchableOpacity style={styles.connectBtn} onPress={openPlaidLink}>
+                <Text style={styles.connectTxt}>Connect bank account</Text>
+              </TouchableOpacity>
+            ) : (
+              <View style={styles.connectDisabled}>
+                <Text style={styles.connectDisabledText}>Linking is loading right now. Try again in a moment.</Text>
+              </View>
+            )}
+          </View>
         )}
 
         {hasAccount ? (
           <>
-            <View style={styles.progressContainer}>
-              <SpendingPieChart slices={spendingSlices} size={212} />
-            </View>
+            <Pressable style={styles.progressContainer} onPress={() => setChartSelectedIndex(null)}>
+              <SpendingPieChart
+                slices={spendingSlices}
+                size={212}
+                selectedIndex={chartSelectedIndex}
+                onSelect={(i) => setChartSelectedIndex(i)}
+              />
+            </Pressable>
 
-            <TouchableOpacity
-              style={styles.insightStack}
-              onPress={openInsights}
-              activeOpacity={0.85}
-            >
+            <TouchableOpacity style={styles.insightStack} onPress={openInsights} activeOpacity={0.85}>
               <Animated.View style={[styles.insightLayer, styles.insightLayerBack, backLayerTransform]} />
               <Animated.View style={[styles.insightLayer, styles.insightLayerMid, midLayerTransform]} />
-              <View style={styles.insightCard}>
+              <Animated.View style={[styles.insightCard, insightCardTransform]}>
+                <Text style={styles.insightLabel}>{topGoalNudge ? 'GOAL NUDGE' : 'INSIGHT'}</Text>
                 <Text style={styles.insightText}>{broadInsight}</Text>
-              </View>
+              </Animated.View>
             </TouchableOpacity>
 
             <View style={styles.moneyInCard}>
@@ -280,6 +402,16 @@ export default function KidDashboard() {
                   minimumFractionDigits: 2,
                   maximumFractionDigits: 2,
                 })}
+              </Text>
+            </View>
+
+            <View style={styles.syncCard}>
+              <View>
+                <Text style={styles.syncLabel}>SYNC STATUS</Text>
+                <Text style={styles.syncValue}>{syncing ? 'Updating now' : 'Up to date'}</Text>
+              </View>
+              <Text style={styles.syncMeta}>
+                {lastSyncedAt ? `Last updated ${new Date(lastSyncedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : 'No sync yet'}
               </Text>
             </View>
 
@@ -317,7 +449,21 @@ export default function KidDashboard() {
           </View>
         )}
 
-        <TouchableOpacity style={styles.signOutBtn} onPress={() => supabase.auth.signOut()}>
+        <TouchableOpacity
+          style={styles.signOutBtn}
+          onPress={async () => {
+            try {
+              const { error } = await supabase.auth.signOut()
+              if (error) {
+                console.error('signOut error:', error)
+                Alert.alert('Sign out failed', 'Please try again.')
+              }
+            } catch (err) {
+              console.error('signOut exception:', err)
+              Alert.alert('Sign out failed', 'Please try again.')
+            }
+          }}
+        >
           <Text style={styles.signOutTxt}>Sign out</Text>
         </TouchableOpacity>
       </RefreshableScrollView>
@@ -376,6 +522,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.lg,
     ...Shadows.medium,
   },
+  insightLabel: {
+    color: Colors.primaryLight,
+    fontSize: Typography.caption,
+    fontWeight: '900',
+    letterSpacing: 1.2,
+    marginBottom: Spacing.xs,
+    textTransform: 'uppercase',
+  },
   insightText: {
     color: Colors.textPrimary,
     fontSize: Typography.bodySmall,
@@ -398,6 +552,20 @@ const styles = StyleSheet.create({
   moneyInLabel: { color: Colors.success, fontSize: Typography.caption, fontWeight: '900', letterSpacing: 1 },
   moneyInSubtitle: { color: Colors.textSecondary, fontSize: Typography.bodySmall, marginTop: 4 },
   moneyInAmount: { color: Colors.success, fontSize: Typography.h4, fontWeight: '900' },
+  syncCard: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: Colors.cardBackgroundAlt,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    padding: Spacing.md,
+    marginBottom: Spacing.xl,
+  },
+  syncLabel: { color: Colors.textMuted, fontSize: Typography.tiny, fontWeight: '900', letterSpacing: 1 },
+  syncValue: { color: Colors.textPrimary, fontSize: Typography.bodySmall, fontWeight: '800', marginTop: 2 },
+  syncMeta: { color: Colors.textSecondary, fontSize: Typography.caption, fontWeight: '600', textAlign: 'right', maxWidth: 160 },
   connectBtn: {
     backgroundColor: Colors.primary,
     borderRadius: BorderRadius.md,
@@ -407,6 +575,29 @@ const styles = StyleSheet.create({
     ...Shadows.medium,
   },
   connectTxt: { color: Colors.textPrimary, fontWeight: '700', fontSize: Typography.body },
+  connectDisabled: {
+    backgroundColor: Colors.cardBackgroundAlt,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    padding: Spacing.md,
+    alignItems: 'center',
+  },
+  connectDisabledText: { color: Colors.textSecondary, fontSize: Typography.bodySmall, textAlign: 'center' },
+  onboardingCard: {
+    backgroundColor: Colors.cardBackground,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    padding: Spacing.lg,
+    marginBottom: Spacing.lg,
+    ...Shadows.medium,
+  },
+  onboardingEyebrow: { color: Colors.textMuted, fontSize: Typography.tiny, fontWeight: '900', letterSpacing: 1, marginBottom: 4 },
+  onboardingTitle: { color: Colors.textPrimary, fontSize: Typography.body, fontWeight: '900', marginBottom: 4 },
+  onboardingText: { color: Colors.textSecondary, fontSize: Typography.bodySmall, lineHeight: 20, marginBottom: Spacing.md },
+  onboardingChecklist: { marginBottom: Spacing.md },
+  onboardingItem: { color: Colors.textPrimary, fontSize: Typography.bodySmall, fontWeight: '700', marginBottom: 6 },
   summaryCard: {
     backgroundColor: Colors.cardBackground,
     borderRadius: BorderRadius.lg,
